@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "name in manifest.json",
-  "description": "description in manifest.json",
+  "name": "LinkedIn Auto Commenter",
+  "description": "Automatically comment on LinkedIn posts using AI",
   "options_ui": {
     "page": "src/pages/options/index.html"
   },
@@ -18,8 +18,18 @@
     "128": "icon-128.png"
   },
   "permissions": [
-    "activeTab"
+    "activeTab",
+    "tabs",
+    "scripting",
+    "storage"
   ],
+  "host_permissions": [
+    "https://*.linkedin.com/*",
+    "https://openrouter.ai/*"
+  ],
+  "background": {
+    "service_worker": "src/pages/background/index.ts"
+  },
   "content_scripts": [
     {
       "matches": [

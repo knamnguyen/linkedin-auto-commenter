@@ -1,181 +1,139 @@
-<div align="center">
-<img src="public/icon-128.png" alt="logo"/>
-<h1> Minimalist Chrome/Firefox Extension Boilerplate with<br/>React + Vite + TypeScript + TailwindCSS</h1>
+# LinkedIn Auto Commenter
 
-<h5>
-This template repository is a side product of my Chrome Extension <a target="_blank" rel="noopener noreferrer" href="https://chrome.google.com/webstore/detail/supatabs/icbcnjlaegndjabnjbaeihnnmidbfigk">Supatabs</a>.
-<br />
-If you tend to have tons of tabs open, or are a OneTab user, make sure to check it out <a target="_blank" rel="noopener noreferrer" href="https://chrome.google.com/webstore/detail/supatabs/icbcnjlaegndjabnjbaeihnnmidbfigk">here</a>!
-</h5>
+A Chrome extension that automatically comments on LinkedIn posts using AI-generated responses.
 
-<h5>Supatabs is an example and showcase of what you can develop with this template. (anything you want, really 🚀)</h5>
+## Features
 
-</div>
+- 🤖 AI-powered comment generation using OpenRouter API
+- 📱 Simple popup interface for configuration
+- 🎯 Automatically finds and processes LinkedIn feed posts
+- ⚙️ Customizable comment style guide
+- 🔄 Sequential processing with proper delays
+- 📌 Uses pinned, inactive tabs for minimal disruption
 
-## Table of Contents
+## Prerequisites
 
-- [Intro](#intro)
-- [Features](#features)
-- [Usage](#usage)
-  - [Getting Started](#gettingStarted) 
-  - [Customization](#customization)
-  - [Publish](#publish)
-- [Tech Docs](#tech)
-- [Credit](#credit)
-- [Contributing](#contributing)
+1. **OpenRouter API Key**: Get one from [OpenRouter.ai](https://openrouter.ai/)
+2. **LinkedIn Account**: Must be logged into LinkedIn in your browser
+3. **Chrome Browser**: Extension is built for Chrome
 
+## Installation
 
-## Intro <a name="intro"></a>
-This boilerplate is meant to be a minimal quick start for creating chrome/firefox extensions using React, Typescript and Tailwind CSS.
+1. Clone or download this repository
+2. Install dependencies:
+   ```bash
+   pnpm install
+   ```
+3. Build the extension:
+   ```bash
+   pnpm build
+   ```
+4. Load the extension in Chrome:
+   - Open Chrome and go to `chrome://extensions/`
+   - Enable "Developer mode" in the top right
+   - Click "Load unpacked" and select the `dist_chrome` folder
 
-It includes all possible pages such as **new tab**, **dev panel**, **pop up**, etc., as well as corresponding manifest settings by default.
-You will likely have to customize/delete some of the pages (see docs below).
+## Usage
 
-You can build dist files for both Chrome and Firefox with manifest v3.
+1. **Setup**:
+   - Click the extension icon in your browser toolbar
+   - Enter your OpenRouter API key
+   - Write a style guide for your comments (e.g., "Professional but friendly, ask questions, share insights, keep under 50 words")
 
-If you are looking for a React focused way to access the local storage, I also implemented a chrome local/sync storage hook. The hook works
-well with this template. [Check it out here](https://gist.github.com/JohnBra/c81451ea7bc9e77f8021beb4f198ab96).
+2. **Start Auto-Commenting**:
+   - Make sure you're logged into LinkedIn
+   - Click "Start Auto Commenting" in the popup
+   - The extension will:
+     - Open LinkedIn feed in a pinned tab
+     - Scroll to load posts for 10 seconds
+     - Extract post URLs
+     - Visit each post individually
+     - Generate and post AI comments
+     - Process posts with 10-second delays between each
 
-## Features <a name="features"></a>
-- [React 19](https://reactjs.org/)
-- [TypeScript](https://www.typescriptlang.org/)
-- [Tailwind CSS 4](https://tailwindcss.com/)
-- [i18n (optional)](https://developer.chrome.com/docs/extensions/reference/api/i18n)
-- [Cross browser development with polyfill (optional)](https://github.com/mozilla/webextension-polyfill?tab=readme-ov-file#basic-setup-with-module-bundlers)
-- [ESLint](https://eslint.org/)
-- [Chrome Extension Manifest Version 3](https://developer.chrome.com/docs/extensions/mv3/intro/)
-- [Github Action](https://github.com/JohnBra/vite-web-extension/actions/workflows/ci.yml) to build and zip your extension (manual trigger)
+3. **Monitor Progress**:
+   - Open Chrome DevTools Console to see progress logs
+   - You can stop the process anytime by clicking "Stop Auto Commenting"
 
-## Usage <a name="usage"></a>
+## How It Works
 
-### Getting Started <a name="gettingStarted"></a>
+1. **Feed Scanning**: Opens LinkedIn feed and scrolls to load posts
+2. **URL Extraction**: Finds all post URLs using activity URN patterns
+3. **Content Analysis**: Visits each post and extracts the main content
+4. **AI Generation**: Sends post content + style guide to OpenRouter API
+5. **Comment Posting**: Simulates typing and submits the generated comment
+6. **Sequential Processing**: Moves to next post with proper delays
 
-#### Developing and building
-This template comes with build configs for both Chrome and Firefox. Running
-`dev` or `build` commands without specifying the browser target will build
-for Chrome by default.
+## Configuration
 
-1. Clone this repository or click "Use this template"
-2. Change `name` and `description` in `manifest.json`
-3. Run `yarn` or `npm i` (check your node version >= 16)
-4. Run `yarn dev[:chrome|:firefox]`, or `npm run dev[:chrome|:firefox]`
+### Style Guide Examples
 
-Running a `dev` command will build your extension and watch for changes in the 
-source files. Changing the source files will refresh the corresponding 
-`dist_<chrome|firefox>` folder.
+- **Professional**: "Keep it professional, add value, ask thoughtful questions"
+- **Casual**: "Be friendly and conversational, use emojis sparingly, share personal experiences"
+- **Analytical**: "Provide data-driven insights, ask about metrics, reference industry trends"
+- **Supportive**: "Be encouraging and positive, offer help or resources, celebrate achievements"
 
-To create an optimized production build, run `yarn build[:chrome|:firefox]`, or
-`npm run build[:chrome|:firefox]`.
+### Timing Settings
 
-#### Load your extension
-For Chrome
-1. Open - Chrome browser
-2. Access - [chrome://extensions](chrome://extensions)
-3. Tick - Developer mode
-4. Find - Load unpacked extension
-5. Select - `dist_chrome` folder in this project (after dev or build)
+The extension uses these delays (hardcoded for reliability):
+- 5 seconds: Tab loading time
+- 10 seconds: Feed scrolling duration
+- 10 seconds: Between processing posts
+- 3 seconds: Before closing tabs
 
-For Firefox
-1. Open - Firefox browser
-2. Access - [about:debugging#/runtime/this-firefox](about:debugging#/runtime/this-firefox)
-3. Click - Load temporary Add-on
-4. Select - any file in `dist_firefox` folder (i.e. `manifest.json`) in this project (after dev or build)
+## Troubleshooting
 
-### Customization <a name="customization"></a>
+### Common Issues
 
-#### Adding / removing pages
-The template includes source code for **all** of the extension pages (i.e. New Tab, Dev Tools, Popup, Side Panel
-etc.). You will likely have to customize it to fit your needs.
+1. **No posts found**: Make sure you're on LinkedIn feed and logged in
+2. **Comments not posting**: Check if comment boxes are available (some posts may have comments disabled)
+3. **API errors**: Verify your OpenRouter API key is correct and has credits
+4. **Extension not working**: Check browser console for error messages
 
-E.g. you don't want the newtab page to activate whenever you open a new tab:
-1. remove the directory `newtab` and its contents in `src/pages`
-2. remove `chrome_url_overrides: { newtab: 'src/pages/newtab/index.html' },` in `manifest.json`
+### LinkedIn Changes
 
-Some pages like the "Side Panel" don't work the exact same in Chrome and Firefox. While this template includes
-the source code for the side panel, it won't automatically be included in the dist file to prevent cross browser
-build warnings.
+LinkedIn frequently updates their UI. If the extension stops working:
+- Check the console for selector errors
+- The extension may need updates to match new LinkedIn class names
 
-To include the side panel for Chrome add the following to the `manifest.json`:
+## Security & Privacy
 
-```typescript
-{
-  "manifest_version": 3,
-  // ...
-  "permissions": [
-    "activeTab",
-    "sidePanel" // <-- permission for sidepanel
-  ],
-  // ...
-  "side_panel": {
-    "default_path": "src/pages/panel/index.html" // <-- tell vite to include it in the build files
-  },
-  // ...
-}
-```
+- API key is stored locally in the extension
+- No data is sent anywhere except to OpenRouter for comment generation
+- Extension only accesses LinkedIn pages when actively running
+- All processing happens locally in your browser
 
-If you need to declare pages in addition to the manifest pages, e.g. a custom `app` page, create a 
-new folder in the `pages` directory and add the corresponding `.html`, `.tsx` and `.css` 
-files (see `options/*` for an example to copy). Then include the root html in the `vite.config.base.ts` 
-file under `build.rollupOptions.input` like so:
+## Development
 
-```typescript
-// ...
-build: {
-   rollupOptions: {
-      input: {
-         app: resolve(pagesDir, "app", "index.html"),
-      },
-      output: {
-         entryFileNames: (chunk) => `src/pages/${chunk.name}/index.js`,
-      },
-   },
-}
-// ...
-```
+To modify the extension:
 
-#### Styling
-CSS files in the `src/pages/*` directories are not necessary. They are left in there in case you want 
-to use it in combination with Tailwind CSS. **Feel free to delete them**.
+1. Edit source files in `src/`
+2. Rebuild with `pnpm build`
+3. Reload the extension in Chrome extensions page
 
-Tailwind can be configured, themed and extended according to the [docs](https://tailwindcss.com/docs/theme).
+Key files:
+- `src/pages/popup/Popup.tsx`: User interface
+- `src/pages/background/index.ts`: Main automation logic
+- `src/pages/content/index.tsx`: LinkedIn page interaction
+- `manifest.json`: Extension configuration
 
-#### Internationalization (i18n)
-To enable internationalization set the `localize` flag in the `vite.config.base.ts` to `true`.
+## Limitations
 
-The template includes a directory `locales` with a basic setup for english i18n. Enabling i18n
-will pull the name and description for your extension from the english translation files instead
-of the manifest.
+- Only works on LinkedIn
+- Requires manual API key setup
+- May break if LinkedIn updates their UI
+- Rate limited by OpenRouter API limits
+- Should be used responsibly to avoid spam
 
-Follow the instructions in the [official docs](https://developer.chrome.com/docs/extensions/reference/api/i18n#description) 
-to add other translations and retrieve them in the extension.
+## Legal & Ethical Use
 
-If you don't need i18n you can ignore the `locales` directory until you need it, as it won't
-be copied into the build folder unless the `localize` flag is set to `true`.
+Please use this extension responsibly:
+- Don't spam or post inappropriate content
+- Respect LinkedIn's terms of service
+- Use thoughtful style guides that add value
+- Monitor the comments being posted
+- Consider the impact on your professional reputation
 
-### Publish your extension to the CWS<a name="publish"></a>
-To upload an extension to the Chrome store you have to pack (zip) it and then upload it to your item 
-in the Chrome Web Store.
+## License
 
-This repo includes a Github Action Workflow to create a 
-[optimized prod build and the zip file](https://github.com/JohnBra/vite-web-extension/actions/workflows/ci.yml).
-
-To run the workflow do the following:
-1. Go to the **"Actions"** tab in your forked repository from this template
-2. In the left sidebar click on **"Build and Zip Chrome Extension"**
-3. Click on **"Run Workflow"** and select the main branch, then **"Run Workflow"**
-4. Refresh the page and click the most recent run
-5. In the summary page **"Artifacts"** section click on the generated **"vite-web-extension-chrome"**
-6. Upload this file to the Chrome Web Store as described [here](https://developer.chrome.com/docs/webstore/publish/)
-
-# Tech Docs <a name="tech"></a>
-- [Vite](https://vitejs.dev/)
-- [Vite Plugins](https://vitejs.dev/guide/api-plugin.html)
-- [Chrome Extension with manifest 3](https://developer.chrome.com/docs/extensions/mv3/)
-- [Chrome Extension i18n](https://developer.chrome.com/docs/extensions/reference/api/i18n#description)
-- [Cross browser development with webextension-polyfill](https://github.com/mozilla/webextension-polyfill?tab=readme-ov-file#webextension-browser-api-polyfill)
-- [@crxjs/vite-plugin](https://crxjs.dev/vite-plugin)
-- [Rollup](https://rollupjs.org/guide/en/)
-- [Tailwind CSS 4](https://tailwindcss.com/docs/configuration)
-
-# Contributing <a name="contributing"></a>
-Feel free to open PRs or raise issues!
+This project is for educational purposes. Use at your own risk and in compliance with LinkedIn's terms of service.
