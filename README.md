@@ -6,10 +6,11 @@ A Chrome extension that automatically comments on LinkedIn posts using AI-genera
 
 - 🤖 AI-powered comment generation using OpenRouter API
 - 📱 Simple popup interface for configuration
-- 🎯 Automatically finds and processes LinkedIn feed posts
+- 🎯 Automatically processes LinkedIn feed posts directly on the page
 - ⚙️ Customizable comment style guide
-- 🔄 Sequential processing with proper delays
-- 📌 Uses pinned, inactive tabs for minimal disruption
+- 🔄 Single-mode processing with proper delays
+- 📊 Configurable maximum posts per session
+- 🚫 Duplicate author detection to avoid spam
 
 ## Prerequisites
 
@@ -39,30 +40,36 @@ A Chrome extension that automatically comments on LinkedIn posts using AI-genera
    - Click the extension icon in your browser toolbar
    - Enter your OpenRouter API key
    - Write a style guide for your comments (e.g., "Professional but friendly, ask questions, share insights, keep under 50 words")
+   - Configure your settings:
+     - **Feed Scroll Duration**: Time to scroll and load posts (5-30 seconds)
+     - **Max Posts**: Maximum number of posts to comment on (5-50)
+     - **Comment Delay**: Seconds between each comment (5-60 seconds)
 
 2. **Start Auto-Commenting**:
    - Make sure you're logged into LinkedIn
    - Click "Start Auto Commenting" in the popup
    - The extension will:
-     - Open LinkedIn feed in a pinned tab
-     - Scroll to load posts for 10 seconds
-     - Extract post URLs
-     - Visit each post individually
-     - Generate and post AI comments
-     - Process posts with 10-second delays between each
+     - Open LinkedIn feed in an active tab
+     - Scroll down to load posts for the specified duration
+     - Scroll back to the top
+     - Process posts one by one directly on the feed page
+     - Generate and post AI comments with proper delays
+     - Stop when the maximum post limit is reached
 
 3. **Monitor Progress**:
-   - Open Chrome DevTools Console to see progress logs
+   - Watch the process in real-time on the LinkedIn feed tab
+   - Check the popup for progress updates (e.g., "5/20 comments posted")
    - You can stop the process anytime by clicking "Stop Auto Commenting"
 
 ## How It Works
 
-1. **Feed Scanning**: Opens LinkedIn feed and scrolls to load posts
-2. **URL Extraction**: Finds all post URLs using activity URN patterns
-3. **Content Analysis**: Visits each post and extracts the main content
-4. **AI Generation**: Sends post content + style guide to OpenRouter API
-5. **Comment Posting**: Simulates typing and submits the generated comment
-6. **Sequential Processing**: Moves to next post with proper delays
+1. **Feed Loading**: Scrolls LinkedIn feed to load multiple posts
+2. **Direct Processing**: Processes posts directly on the feed page without opening individual tabs
+3. **Author Duplicate Check**: Tracks commented authors to avoid duplicate comments in the same session
+4. **Content Analysis**: Extracts post content from each visible post
+5. **AI Generation**: Sends post content + style guide to OpenRouter API
+6. **Comment Posting**: Simulates typing and submits the generated comment
+7. **Smart Limits**: Stops when maximum posts reached or no more posts available
 
 ## Configuration
 
@@ -73,13 +80,11 @@ A Chrome extension that automatically comments on LinkedIn posts using AI-genera
 - **Analytical**: "Provide data-driven insights, ask about metrics, reference industry trends"
 - **Supportive**: "Be encouraging and positive, offer help or resources, celebrate achievements"
 
-### Timing Settings
+### Settings
 
-The extension uses these delays (hardcoded for reliability):
-- 5 seconds: Tab loading time
-- 10 seconds: Feed scrolling duration
-- 10 seconds: Between processing posts
-- 3 seconds: Before closing tabs
+- **Feed Scroll Duration**: 5-30 seconds (default: 10s)
+- **Max Posts to Comment On**: 5-50 posts (default: 20)
+- **Seconds Between Each Comment**: 5-60 seconds (default: 10s)
 
 ## Troubleshooting
 
