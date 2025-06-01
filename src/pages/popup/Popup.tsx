@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 // Default comment style guide
 const DEFAULT_STYLE_GUIDE = `You are about to write a LinkedIn comment. Imagine you are a young professional or ambitious student (Gen Z), scrolling through your LinkedIn feed during a quick break – maybe between classes, on your commute, or while grabbing a coffee. You're sharp, interested in tech, business, career growth, personal development, social impact, product, marketing, or entrepreneurship. You appreciate authentic, slightly edgy, and insightful content.
 
+IMPORTANT: Only respond with the comment, no other text.
+
 You've just read a LinkedIn post (which I will provide). Your goal is to leave a comment that sounds genuinely human – like a real thought that just popped into your head.
 
 Your Commenter Persona (reflecting the target audience of the original poster):
@@ -39,7 +41,9 @@ Your Task:
 
 Read the provided LinkedIn post. Then, write a comment that embodies this human, Gen Z persona, adhering strictly to the "How to Sound Human" guidelines above. Make it feel like a genuine, spontaneous reaction.
 
-Remember the core principle: You're a real person scrolling your feed who had a quick, authentic thought. Not an AI trying to optimize for engagement or demonstrate comprehension.`;
+Remember the core principle: You're a real person scrolling your feed who had a quick, authentic thought. Not an AI trying to optimize for engagement or demonstrate comprehension.
+
+IMPORTANT: Only respond with the comment, no other text.`;
 
 // Default API key
 const DEFAULT_API_KEY = 'AIzaSyDXwKB6h-jGMaOrq88461CcJt4KZpwh8aM';
@@ -50,7 +54,6 @@ export default function Popup() {
   const [scrollDuration, setScrollDuration] = useState(10);
   const [commentDelay, setCommentDelay] = useState(10);
   const [maxPosts, setMaxPosts] = useState(20);
-  const [spectatorMode, setSpectatorMode] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [status, setStatus] = useState('');
   const [commentCount, setCommentCount] = useState(0);
@@ -62,7 +65,7 @@ export default function Popup() {
   useEffect(() => {
     chrome.storage.local.get([
       'apiKey', 'styleGuide', 'scrollDuration', 
-      'commentDelay', 'maxPosts', 'spectatorMode', 'totalAllTimeComments',
+      'commentDelay', 'maxPosts', 'totalAllTimeComments',
       'isRunning', 'currentCommentCount'
     ], (result) => {
       if (result.apiKey) setApiKey(result.apiKey);
@@ -70,7 +73,6 @@ export default function Popup() {
       if (result.scrollDuration) setScrollDuration(result.scrollDuration);
       if (result.commentDelay) setCommentDelay(result.commentDelay);
       if (result.maxPosts) setMaxPosts(result.maxPosts);
-      if (result.spectatorMode !== undefined) setSpectatorMode(result.spectatorMode);
       if (result.totalAllTimeComments) setTotalAllTimeComments(result.totalAllTimeComments);
       
       // Restore running state if it exists
@@ -185,11 +187,6 @@ export default function Popup() {
     chrome.storage.local.set({ maxPosts: value });
   };
 
-  const handleSpectatorModeChange = (value: boolean) => {
-    setSpectatorMode(value);
-    chrome.storage.local.set({ spectatorMode: value });
-  };
-
   const handleSetDefaultStyleGuide = () => {
     setStyleGuide(DEFAULT_STYLE_GUIDE);
     chrome.storage.local.set({ styleGuide: DEFAULT_STYLE_GUIDE });
@@ -222,8 +219,7 @@ export default function Popup() {
         apiKey: apiKey.trim(),
         scrollDuration: scrollDuration,
         commentDelay: commentDelay,
-        maxPosts: maxPosts,
-        spectatorMode: spectatorMode
+        maxPosts: maxPosts
       });
     } catch (error) {
       console.error('Error starting auto-commenting:', error);
@@ -294,9 +290,6 @@ export default function Popup() {
             <span className="text-blue-600">This session: {commentCount}</span>
             <span className="text-blue-600">Target: {maxPosts} posts</span>
           </div>
-          <div className="text-xs text-blue-600 mt-1">
-            Mode: {spectatorMode ? 'Spectator (visible)' : 'Background (pinned tab)'}
-          </div>
         </div>
       )}
 
@@ -314,11 +307,11 @@ export default function Popup() {
         />
         <div className="flex items-center justify-between mt-2">
           <p className="text-xs text-gray-500">
-            Get your API key from{' '}
+          Get your API key from{' '}
             <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
               Google AI Studio
-            </a>
-          </p>
+          </a>
+        </p>
           <button
             onClick={handleSetDefaultApiKey}
             disabled={isRunning}
@@ -415,28 +408,6 @@ export default function Popup() {
       </div>
 
       <div className="mb-4">
-        <label className="flex items-center">
-          <input
-            type="checkbox"
-            checked={spectatorMode}
-            onChange={(e) => handleSpectatorModeChange(e.target.checked)}
-            disabled={isRunning}
-            className="mr-2"
-          />
-          <span className="text-sm font-medium text-gray-700">
-            👁️ Spectator Mode
-            {spectatorMode && <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-1 rounded">ENABLED</span>}
-          </span>
-        </label>
-        <p className="text-xs text-gray-500 mt-1">
-          {spectatorMode ? 
-            '🎯 Opens LinkedIn feed in active tab so you can watch the commenting process' : 
-            '⚡ Runs in background with pinned, inactive tab for minimal disruption'
-          }
-        </p>
-      </div>
-
-      <div className="mb-4">
         {!isRunning ? (
           <button
             onClick={handleStart}
@@ -497,15 +468,11 @@ export default function Popup() {
           <li>• Feed scroll: {scrollDuration}s</li>
           <li>• Max posts: {maxPosts}</li>
           <li>• Comment delay: {commentDelay}s between posts</li>
-          <li>• Mode: {spectatorMode ? 'Spectator (visible)' : 'Background (pinned tab)'}</li>
         </ul>
 
         <div className="text-xs text-gray-500">
           <p className="font-medium text-gray-600 mb-1">⚠️ Use responsibly:</p>
           <p className="mb-2">Monitor posted comments and ensure they add value to conversations</p>
-          <p className="text-blue-600 font-medium">
-            🔄 New mode: Comments directly on the feed page without opening individual posts
-          </p>
         </div>
       </div>
     </div>

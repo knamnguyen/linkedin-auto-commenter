@@ -34,7 +34,7 @@ export class OpenRouterClient {
                     'X-Title': 'LinkedIn Auto Commenter',
                 },
                 body: JSON.stringify({
-                    model: 'google/gemini-2.0-flash-exp:free',
+                    model: 'openai/gpt-4o-mini',
                     messages: [
                         {
                             role: 'system',

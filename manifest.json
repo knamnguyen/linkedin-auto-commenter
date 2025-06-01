@@ -20,12 +20,14 @@
   "permissions": [
     "activeTab",
     "tabs",
+    "windows",
     "scripting",
     "storage"
   ],
   "host_permissions": [
     "https://*.linkedin.com/*",
-    "https://openrouter.ai/*"
+    "https://openrouter.ai/*",
+    "https://aistudio.google.com/*"
   ],
   "background": {
     "service_worker": "src/pages/background/index.ts"
@@ -38,7 +40,8 @@
         "<all_urls>"
       ],
       "js": [
-        "src/pages/content/index.tsx"
+        "src/pages/content/index.tsx",
+        "src/pages/content/always-active-core.ts"
       ],
       "css": [
         "contentStyle.css"

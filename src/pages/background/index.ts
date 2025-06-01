@@ -9,9 +9,9 @@ interface AutoCommentingState {
   scrollDuration: number;
   commentDelay: number;
   maxPosts: number;
-  spectatorMode: boolean;
   commentCount: number;
   feedTabId?: number;
+  backgroundWindowId?: number;
 }
 
 let autoCommentingState: AutoCommentingState = {
@@ -21,13 +21,94 @@ let autoCommentingState: AutoCommentingState = {
   scrollDuration: 10,
   commentDelay: 10,
   maxPosts: 20,
-  spectatorMode: false,
   commentCount: 0
 };
 
 // Utility function to wait for a specified time
 const waitBackground = (ms: number): Promise<void> => {
   return new Promise(resolve => setTimeout(resolve, ms));
+};
+
+// Function to get current window position for background window positioning
+const getCurrentWindowInfo = async (): Promise<chrome.windows.Window | null> => {
+  try {
+    const currentWindow = await chrome.windows.getCurrent();
+    return currentWindow;
+  } catch (error) {
+    console.error('Error getting current window info:', error);
+    return null;
+  }
+};
+
+// Function to create a background window positioned behind the current window
+const createBackgroundWindow = async (url: string): Promise<chrome.windows.Window | null> => {
+  try {
+    const currentWindow = await getCurrentWindowInfo();
+    console.log('Current window info:', currentWindow);
+    
+    // Force new window creation with specific settings to prevent throttling
+    let windowOptions: chrome.windows.CreateData = {
+      url: url,
+      type: 'popup', // Use popup to ensure it's a separate window
+      focused: true, // Start with focus so user can see it
+      width: 1200,
+      height: 800,
+      left: 100,
+      top: 100
+    };
+
+    // If we have current window info, position the background window behind it
+    if (currentWindow && currentWindow.left !== undefined && currentWindow.top !== undefined) {
+      windowOptions = {
+        ...windowOptions,
+        // Position slightly offset from current window  
+        left: (currentWindow.left || 0) + 50,
+        top: (currentWindow.top || 0) + 50,
+        width: Math.min(currentWindow.width || 1200, 1200),
+        height: Math.min(currentWindow.height || 800, 800)
+      };
+    }
+
+    console.log('Creating background window with options:', windowOptions);
+    const backgroundWindow = await chrome.windows.create(windowOptions);
+    console.log('Created window result:', backgroundWindow);
+    console.log('Window ID:', backgroundWindow.id);
+    console.log('Window tabs:', backgroundWindow.tabs);
+    console.log('Window type:', backgroundWindow.type);
+    console.log('Window state:', backgroundWindow.state);
+    
+    // Verify it's actually a separate window
+    if (backgroundWindow.id) {
+      const allWindows = await chrome.windows.getAll();
+      console.log('Total windows after creation:', allWindows.length);
+      console.log('All window IDs:', allWindows.map(w => w.id));
+    }
+    
+    // Wait a moment for the window to be fully created
+    await waitBackground(2000);
+    
+    // Don't immediately refocus the original window - let the new window stay focused
+    // so the user can interact with it and see the start button
+    console.log('New LinkedIn window should now be focused and visible');
+
+    return backgroundWindow;
+  } catch (error) {
+    console.error('Error creating background window:', error);
+    return null;
+  }
+};
+
+// Function to cleanup background window
+const cleanupBackgroundWindow = async (): Promise<void> => {
+  if (autoCommentingState.backgroundWindowId) {
+    try {
+      await chrome.windows.remove(autoCommentingState.backgroundWindowId);
+      console.log('Background window cleaned up successfully');
+    } catch (error) {
+      console.log('Background window may have already been closed:', error);
+    }
+    autoCommentingState.backgroundWindowId = undefined;
+  }
 };
 
 // Function to send status updates to popup
@@ -220,14 +301,13 @@ const ai = new GoogleGenAI({ apiKey: autoCommentingState.apiKey });
   }
 };
 
-// Main function to start auto-commenting with new flow
+// Main function to start auto-commenting with background window support
 const startAutoCommenting = async (
   styleGuide: string, 
   apiKey: string, 
   scrollDuration: number,
   commentDelay: number,
-  maxPosts: number,
-  spectatorMode: boolean
+  maxPosts: number
 ): Promise<void> => {
   try {
     // Reset and initialize state
@@ -236,21 +316,31 @@ const startAutoCommenting = async (
     autoCommentingState.scrollDuration = scrollDuration;
     autoCommentingState.commentDelay = commentDelay;
     autoCommentingState.maxPosts = maxPosts;
-    autoCommentingState.spectatorMode = spectatorMode;
     autoCommentingState.isRunning = true;
     autoCommentingState.commentCount = 0;
 
-    console.log(`Starting LinkedIn auto-commenting process in ${spectatorMode ? 'spectator' : 'background'} mode...`);
-    sendStatusUpdate(`Starting LinkedIn auto-commenting in ${spectatorMode ? 'spectator' : 'background'} mode...`);
+    console.log(`Starting LinkedIn auto-commenting process...`);
+    sendStatusUpdate(`Starting LinkedIn auto-commenting...`);
 
-    // Open LinkedIn feed - active tab for spectator mode, pinned inactive for background mode
-    const feedTab = await chrome.tabs.create({
-      url: 'https://www.linkedin.com/feed/',
-      active: spectatorMode, // Active only in spectator mode
-      pinned: !spectatorMode // Pinned only in background mode
-    });
+    let feedTab: chrome.tabs.Tab | undefined;
 
-    if (!feedTab.id) {
+    // Background mode: Create dedicated background window
+    console.log('Creating background window for automation...');
+    sendStatusUpdate('Creating background window for LinkedIn automation...');
+    
+    const backgroundWindow = await createBackgroundWindow('https://www.linkedin.com/feed/');
+    
+    if (!backgroundWindow || !backgroundWindow.tabs || !backgroundWindow.tabs[0]) {
+      throw new Error('Failed to create background window or get its tab');
+    }
+
+    autoCommentingState.backgroundWindowId = backgroundWindow.id;
+    feedTab = backgroundWindow.tabs[0];
+    
+    console.log(`Background window created with ID: ${backgroundWindow.id}, tab ID: ${feedTab.id}`);
+    sendStatusUpdate('Background window created successfully. LinkedIn automation running in background...');
+
+    if (!feedTab || !feedTab.id) {
       throw new Error('Failed to create LinkedIn feed tab');
     }
 
@@ -260,24 +350,35 @@ const startAutoCommenting = async (
     // Wait for feed to load
     await waitBackground(5000);
 
-    // Start the new commenting flow
-    sendStatusUpdate(`Scrolling feed for ${scrollDuration} seconds to load posts...`);
-    
-    // Send message to content script to start the new flow
+    // Send message to content script to show the start button
+    sendStatusUpdate('LinkedIn feed loaded. Showing start button...');
     chrome.tabs.sendMessage(feedTab.id, {
-      action: 'startNewCommentingFlow',
-      scrollDuration: scrollDuration,
-      commentDelay: commentDelay,
-      maxPosts: maxPosts,
-      spectatorMode: spectatorMode,
-      styleGuide: styleGuide,
-      apiKey: apiKey
+      action: 'showStartButton'
     });
+
+    // Note: The actual automation will start when user clicks the start button
+    // The 'startNewCommentingFlow' will be triggered from the content script
+    console.log('Start button should now be visible in the LinkedIn tab');
+
+    // Remove the automatic start since we now wait for user interaction
+    // Start the commenting flow
+    // sendStatusUpdate(`Scrolling feed for ${scrollDuration} seconds to load posts...`);
+    
+    // Send message to content script to start the automation
+    // chrome.tabs.sendMessage(feedTab.id, {
+    //   action: 'startNewCommentingFlow',
+    //   scrollDuration: scrollDuration,
+    //   commentDelay: commentDelay,
+    //   maxPosts: maxPosts,
+    //   styleGuide: styleGuide,
+    //   apiKey: apiKey
+    // });
 
   } catch (error) {
     console.error('Error in auto-commenting process:', error);
     autoCommentingState.isRunning = false;
-    sendStatusUpdate('Error occurred during auto-commenting', { isRunning: false });
+    await cleanupBackgroundWindow(); // Clean up on error
+    sendStatusUpdate('Error occurred during auto-commenting setup', { isRunning: false });
   }
 };
 
@@ -290,16 +391,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       styleGuide: request.styleGuide,
       scrollDuration: request.scrollDuration,
       commentDelay: request.commentDelay,
-      maxPosts: request.maxPosts,
-      spectatorMode: request.spectatorMode
+      maxPosts: request.maxPosts
     });
     startAutoCommenting(
       request.styleGuide, 
       request.apiKey, 
       request.scrollDuration,
       request.commentDelay,
-      request.maxPosts,
-      request.spectatorMode
+      request.maxPosts
     );
     sendResponse({ success: true });
   } else if (request.action === 'stopAutoCommenting') {
@@ -313,6 +412,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     }
     
+    // Clean up background window
+    cleanupBackgroundWindow().then(() => {
+      console.log('Background window cleanup completed');
+    });
+    
     // Clear current run state from storage
     chrome.storage.local.set({ 
       isRunning: false,
@@ -322,7 +426,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Reset comment count
     autoCommentingState.commentCount = 0;
     
-    sendStatusUpdate('Process stopped and reset', { isRunning: false });
+    sendStatusUpdate('Process stopped and background window closed', { isRunning: false });
     sendResponse({ success: true });
   } else if (request.action === 'generateComment') {
     // Handle comment generation requests from content script
@@ -371,8 +475,115 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'commentingCompleted') {
     // Handle completion notification from content script
     autoCommentingState.isRunning = false;
-    sendStatusUpdate(`Commenting completed! Check the counts above for total comments posted.`, { isRunning: false });
+    
+    // Clean up background window when automation completes
+    cleanupBackgroundWindow().then(() => {
+      console.log('Automation completed - background window cleaned up');
+    });
+    
+    sendStatusUpdate(`Commenting completed! Background window closed. Check the counts above for total comments posted.`, { isRunning: false });
     sendResponse({ success: true });
+  } else if (request.action === 'heartbeat') {
+    // Handle keep-alive heartbeat from content script
+    sendResponse({ alive: true, timestamp: Date.now() });
+  } else if (request.action === 'moveToBackground') {
+    // Handle request to move window to background
+    console.log('Content script requested to move window to background');
+    
+    const moveWindowToBackground = async () => {
+      if (autoCommentingState.backgroundWindowId) {
+        try {
+          console.log('Step 1: Getting all windows...');
+          const allWindows = await chrome.windows.getAll({ populate: false });
+          
+          // Find windows that aren't our background window
+          const otherWindows = allWindows.filter(w => 
+            w.id !== autoCommentingState.backgroundWindowId && 
+            w.type === 'normal' &&
+            w.state !== 'minimized'
+          );
+          
+          console.log(`Found ${otherWindows.length} other windows to focus`);
+          
+          // Step 2: Focus another window or create one if none exist
+          if (otherWindows.length > 0) {
+            const targetWindow = otherWindows[0];
+            if (targetWindow.id) {
+              console.log(`Step 2: Focusing existing window ID ${targetWindow.id}...`);
+              await chrome.windows.update(targetWindow.id, { focused: true });
+            }
+          } else {
+            // No other windows, create a temporary one to take focus
+            console.log('Step 2: No other windows found, creating temporary window...');
+            const tempWindow = await chrome.windows.create({
+              url: 'about:blank',
+              width: 400,
+              height: 300,
+              focused: true,
+              type: 'popup'
+            });
+            console.log(`Created temporary window ID ${tempWindow.id} to take focus`);
+          }
+          
+          // Wait for the focus change to take effect
+          await waitBackground(2000);
+          
+          // Step 3: Set our LinkedIn window to background
+          console.log('Step 3: Setting LinkedIn window to background...');
+          await chrome.windows.update(autoCommentingState.backgroundWindowId, { 
+            focused: false
+          });
+          
+          console.log('✅ Successfully moved LinkedIn window to background');
+          sendResponse({ success: true });
+          
+        } catch (error) {
+          console.error('❌ Error moving window to background:', error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          sendResponse({ success: false, error: errorMessage });
+        }
+      } else {
+        sendResponse({ success: false, error: 'No background window ID found' });
+      }
+    };
+    
+    // Execute the async function
+    moveWindowToBackground();
+    
+    return true; // Indicates we will send a response asynchronously
+  }
+});
+
+// Handle background window being manually closed
+chrome.windows.onRemoved.addListener((windowId) => {
+  if (autoCommentingState.backgroundWindowId === windowId) {
+    console.log('Background window was manually closed');
+    autoCommentingState.backgroundWindowId = undefined;
+    
+    // Stop the automation if it's running
+    if (autoCommentingState.isRunning) {
+      autoCommentingState.isRunning = false;
+      
+      // Send stop message to content script if possible
+      if (autoCommentingState.feedTabId) {
+        chrome.tabs.sendMessage(autoCommentingState.feedTabId, {
+          action: 'stopCommentingFlow'
+        }).catch(() => {
+          // Tab might already be gone, that's okay
+        });
+      }
+      
+      // Clear current run state from storage
+      chrome.storage.local.set({ 
+        isRunning: false,
+        currentCommentCount: 0
+      });
+      
+      // Reset comment count
+      autoCommentingState.commentCount = 0;
+      
+      sendStatusUpdate('Background window was closed - automation stopped', { isRunning: false });
+    }
   }
 });
 
