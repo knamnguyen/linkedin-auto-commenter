@@ -1,9 +1,3 @@
-try {
-  console.log('content script loaded');
-} catch (e) {
-  console.error(e);
-}
-
 // Content script for LinkedIn Auto Commenter - Background Window Mode
 // This script processes posts directly on the feed page
 
@@ -16,12 +10,68 @@ let audioElement: HTMLAudioElement | null = null;
 // Check if we need to show the start button
 let hasUserInteracted = false;
 
-// Remove automatic start button display - only show when triggered by popup
-// setTimeout(() => {
-//   if (!hasUserInteracted && window.location.href.includes('linkedin.com')) {
-//     showStartButton();
-//   }
-// }, 2000); // Wait 2 seconds for page to load
+// Background logging functions to send logs to background script
+const backgroundLog = (...args: any[]) => {
+  console.log(...args); // Still log to content script console
+  chrome.runtime.sendMessage({
+    action: 'backgroundLog',
+    level: 'log',
+    args: args
+  }).catch(() => {/* ignore if background script not available */});
+};
+
+const backgroundError = (...args: any[]) => {
+  console.error(...args); // Still log to content script console
+  chrome.runtime.sendMessage({
+    action: 'backgroundLog',
+    level: 'error', 
+    args: args
+  }).catch(() => {/* ignore if background script not available */});
+};
+
+const backgroundWarn = (...args: any[]) => {
+  console.warn(...args); // Still log to content script console
+  chrome.runtime.sendMessage({
+    action: 'backgroundLog',
+    level: 'warn',
+    args: args
+  }).catch(() => {/* ignore if background script not available */});
+};
+
+const backgroundGroup = (...args: any[]) => {
+  console.group(...args); // Still log to content script console
+  chrome.runtime.sendMessage({
+    action: 'backgroundLog',
+    level: 'group',
+    args: args
+  }).catch(() => {/* ignore if background script not available */});
+};
+
+const backgroundGroupEnd = () => {
+  console.groupEnd(); // Still log to content script console
+  chrome.runtime.sendMessage({
+    action: 'backgroundLog',
+    level: 'groupEnd',
+    args: []
+  }).catch(() => {/* ignore if background script not available */});
+};
+
+//check if page is ready to display the start button
+if (document.readyState !== 'loading') {
+  console.log('document is already ready, just execute code here');
+  //send page ready message to background script
+  chrome.runtime.sendMessage({
+    action: 'pageReady'
+  });
+} else {
+  document.addEventListener('DOMContentLoaded', function () {
+      console.log('document was not ready, place code here');
+      //send page ready message to background script
+      chrome.runtime.sendMessage({
+        action: 'pageReady'
+      });
+  });
+}
 
 // Function to show the start button overlay
 function showStartButton() {
@@ -149,45 +199,58 @@ function showStartButton() {
       await injectAndPlayContinuousSound();
       
       startButton.textContent = '🎵 Audio Started';
-      subtitle.textContent = 'Audio is playing - moving to background...';
+
       await wait(1000);
+      startButton.textContent = '💬 Starting flow';
+      //step 2: move back to the original tab
+   
       
-      // Step 2: Move window to background
-      console.log('📱 Step 2: Moving to background...');
-      startButton.textContent = '📱 Moving to Background';
-      subtitle.textContent = 'Moving window to background...';
-      
-      // Send message to background script to move window
-      chrome.runtime.sendMessage({
-        action: 'moveToBackground'
-      });
-      
-      await wait(1000);
-      
-      // Step 3: Remove overlay and start commenting flow
-      console.log('💬 Step 3: Starting commenting flow...');
-      overlay.remove();
+     
       
       // Get settings from storage and start commenting
-      chrome.storage.sync.get(['scrollDuration', 'commentDelay', 'maxPosts', 'styleGuide', 'apiKey'], (result) => {
-        const scrollDuration = result.scrollDuration || 10;
-        const commentDelay = result.commentDelay || 5;
-        const maxPosts = result.maxPosts || 10;
-        const styleGuide = result.styleGuide || 'Be engaging and professional';
-        const apiKey = result.apiKey || '';
+      chrome.storage.local.get(['scrollDuration', 'commentDelay', 'maxPosts', 'styleGuide', 'apiKey'], (result) => {
+        backgroundLog('Content: Retrieved settings from storage:', result);
         
-        console.log('🎯 Starting commenting flow with settings:', {
+        // Use popup settings with fallbacks only if completely missing
+        const scrollDuration = result.scrollDuration !== undefined ? result.scrollDuration : 10;
+        const commentDelay = result.commentDelay !== undefined ? result.commentDelay : 5;
+        const maxPosts = result.maxPosts !== undefined ? result.maxPosts : 5;
+        const styleGuide = result.styleGuide !== undefined ? result.styleGuide : 'Be engaging and professional';
+        const apiKey = result.apiKey !== undefined ? result.apiKey : '';
+        
+        backgroundLog('🎯 Starting commenting flow with settings:', {
           scrollDuration,
           commentDelay, 
           maxPosts,
-          styleGuide: styleGuide.substring(0, 50) + '...',
+          styleGuide: styleGuide?.substring(0, 50) + '...',
           hasApiKey: !!apiKey
         });
         
+        if (!apiKey) {
+          backgroundError('❌ No API key found in storage! Cannot start commenting.');
+          return;
+        }
+        
+        if (!styleGuide) {
+          backgroundError('❌ No style guide found in storage! Cannot start commenting.');
+          return;
+        }
+        
         startNewCommentingFlow(scrollDuration, commentDelay, maxPosts, styleGuide, apiKey);
       });
+      await wait(1000);
+      startButton.textContent = '💬 Moving back to original tab';
+      await wait(1000);
       
       console.log('✅ Full flow started successfully!');
+      overlay.remove();
+
+    
+      
+      console.log('💬 Step 3: Moving back to the original tab...');
+      chrome.runtime.sendMessage({
+        action: 'moveToOriginalTab'
+      });
       
     } catch (error) {
       console.error('❌ Failed to start:', error);
@@ -259,12 +322,15 @@ async function injectAndPlayContinuousSound(): Promise<void> {
       // C4 is approx 261.63 Hz, C5 is approx 523.25 Hz
       const minFreq = 261.63;
       const maxFreq = 523.25;
-      const randomFrequency = Math.random() * (maxFreq - minFreq) + minFreq;
-      oscillator.frequency.setValueAtTime(randomFrequency, audioContext.currentTime);
+      // const frequency = Math.random() * (maxFreq - minFreq) + minFreq;
+      const frequency = 10000;
+
+      //picking an inaudible frequency almost zero volume
+      oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
 
       // Set the volume using the GainNode
       // 0.0 is silent, 1.0 is full volume. Let's set it low to be less intrusive.
-      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime); // 10% volume
+      gainNode.gain.setValueAtTime(0.001, audioContext.currentTime); // 10% volume
 
       // --- HTML <audio> Element Setup ---
 
@@ -311,7 +377,7 @@ async function injectAndPlayContinuousSound(): Promise<void> {
         if (playPromise !== undefined) {
           playPromise.then(() => {
             // Autoplay started successfully.
-            console.log(`✅ Playing a ${oscillator.type} wave at ${randomFrequency.toFixed(2)} Hz. Audio element injected and playing.`);
+            console.log(`✅ Playing a ${oscillator.type} wave at ${frequency.toFixed(2)} Hz. Audio element injected and playing.`);
             resolve();
           }).catch((error) => {
             // Autoplay was prevented.
@@ -345,7 +411,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     startNewCommentingFlow(
       request.scrollDuration, 
       request.commentDelay, 
-      request.maxPosts,
+      request.maxPosts, 
       request.styleGuide, 
       request.apiKey
     );
@@ -355,9 +421,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     isCommentingActive = false;
     stopTabActiveAudio();
     sendResponse({ success: true });
-  } else if (request.action === 'heartbeat') {
-    // Respond to heartbeat to keep connection alive
-    sendResponse({ alive: true });
   } else if (request.action === 'openrouter_error') {
     // Handle OpenRouter API errors specifically
     console.group('🚨 OPENROUTER API ERROR - WHY FALLBACK COMMENT WAS USED');
@@ -574,49 +637,55 @@ async function updateCommentCounts(): Promise<void> {
 async function startNewCommentingFlow(
   scrollDuration: number, 
   commentDelay: number, 
-  maxPosts: number,
+  maxPosts: number, 
   styleGuide: string, 
   apiKey: string
 ) {
   isCommentingActive = true;
   console.log(`🚀 Starting new commenting flow with parameters:`);
+  backgroundLog(`🚀 Starting new commenting flow with parameters:`);
   console.log(`   - scrollDuration: ${scrollDuration}`);
   console.log(`   - commentDelay: ${commentDelay}`);
   console.log(`   - maxPosts: ${maxPosts}`);
   console.log(`   - isCommentingActive: ${isCommentingActive}`);
+  backgroundLog(`   - scrollDuration: ${scrollDuration}, commentDelay: ${commentDelay}, maxPosts: ${maxPosts}, isCommentingActive: ${isCommentingActive}`);
   
-  // Start anti-throttling mechanisms to prevent tab throttling
-  keepTabActiveAudio();
-  // // Enable always-active core to spoof visibility and focus
-  // if (window.alwaysActive) {
-  //   window.alwaysActive.enable();
-  //   console.log('🔒 Enabled always-active core to prevent throttling');
-  // }
+  // // Start anti-throttling mechanisms to prevent tab throttling
+  // keepTabActiveAudio();
+
+  //starts the always active core
+  window.alwaysActive.enable();
   
   // Load today's commented authors from local storage
   commentedAuthors = await loadTodayCommentedAuthors();
   console.log(`Loaded ${commentedAuthors.size} already commented authors for today`);
+  backgroundLog(`Loaded ${commentedAuthors.size} already commented authors for today`);
   
   try {
     console.log(`Starting new commenting flow with max ${maxPosts} posts...`);
+    backgroundLog(`Starting new commenting flow with max ${maxPosts} posts...`);
     
     // Step 1: Scroll down for specified duration to load posts
     console.log(`📜 Step 1: Scrolling feed for ${scrollDuration} seconds...`);
+    backgroundLog(`📜 Step 1: Scrolling feed for ${scrollDuration} seconds...`);
     await scrollFeedToLoadPosts(scrollDuration);
     
     if (!isCommentingActive) {
       console.log('❌ Commenting stopped during scroll phase');
+      backgroundLog('❌ Commenting stopped during scroll phase');
       stopTabActiveAudio();
       return;
     }
     
     // Step 2: Scroll back to top
     console.log('📜 Step 2: Scrolling back to top...');
+    backgroundLog('📜 Step 2: Scrolling back to top...');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     await wait(2000);
     
     if (!isCommentingActive) {
       console.log('❌ Commenting stopped during scroll to top');
+      backgroundLog('❌ Commenting stopped during scroll to top');
       stopTabActiveAudio();
       return;
     }
@@ -626,11 +695,13 @@ async function startNewCommentingFlow(
     console.log(`   - maxPosts parameter: ${maxPosts}`);
     console.log(`   - commentDelay parameter: ${commentDelay}`);
     console.log(`   - isCommentingActive before processing: ${isCommentingActive}`);
+    backgroundLog(`📜 Step 3: Processing all posts on feed... maxPosts: ${maxPosts}, commentDelay: ${commentDelay}, isCommentingActive: ${isCommentingActive}`);
     
     await processAllPostsOnFeed(commentDelay, maxPosts);
     
     console.log(`📜 Step 3 completed. Final state:`);
     console.log(`   - isCommentingActive: ${isCommentingActive}`);
+    backgroundLog(`📜 Step 3 completed. Final isCommentingActive: ${isCommentingActive}`);
     
     // Stop anti-throttling mechanisms
     stopTabActiveAudio();
@@ -638,66 +709,169 @@ async function startNewCommentingFlow(
     // Only notify completion if we weren't stopped
     if (isCommentingActive) {
       console.log('🏁 Sending completion message to background script...');
+      backgroundLog('🏁 Sending completion message to background script...');
       chrome.runtime.sendMessage({
         action: 'commentingCompleted'
       });
     } else {
       console.log('🛑 Not sending completion message because commenting was stopped');
+      backgroundLog('🛑 Not sending completion message because commenting was stopped');
     }
     
   } catch (error) {
     console.error('💥 Error in new commenting flow:', error);
+    backgroundError('💥 Error in new commenting flow:', error);
     isCommentingActive = false;
     stopTabActiveAudio();
   }
 }
 
-// Function to scroll feed and load posts
+// Helper function to manually trigger scroll events for better LinkedIn compatibility
+function triggerScrollEvents() {
+  // Manually dispatch scroll events to help LinkedIn's listeners
+  const scrollEvent = new Event('scroll', { bubbles: true, cancelable: true });
+  window.dispatchEvent(scrollEvent);
+  document.dispatchEvent(scrollEvent);
+  
+  // Also trigger wheel events which some sites listen for
+  const wheelEvent = new WheelEvent('wheel', { 
+    bubbles: true, 
+    cancelable: true, 
+    deltaY: 100,
+    deltaMode: WheelEvent.DOM_DELTA_PIXEL
+  });
+  window.dispatchEvent(wheelEvent);
+}
+
+// Function to scroll feed and load posts - Optimized for background tabs
 async function scrollFeedToLoadPosts(duration: number): Promise<void> {
   console.log(`Scrolling feed for ${duration} seconds to load posts...`);
+  backgroundLog(`📜 Starting optimized background scroll for ${duration} seconds...`);
   
   const startTime = Date.now();
   const endTime = startTime + (duration * 1000);
   
+  // Track metrics for debugging
+  let scrollAttempts = 0;
+  let actualScrolls = 0;
+  let postCountBefore = 0;
+  let postCountAfter = 0;
+  
+  // Get initial post count
+  const initialPosts = document.querySelectorAll('.feed-shared-update-v2__control-menu-container');
+  postCountBefore = initialPosts.length;
+  backgroundLog(`📜 Initial post count: ${postCountBefore}`);
+  
+  // Use longer intervals and larger scroll amounts for background tabs
+  const scrollAmount = 1200; // Larger scroll increment
+  const pauseBetweenScrolls = 3000; // 3 second pause to allow LinkedIn to load content
+  const maxScrollsPerCheck = 3; // Number of scrolls before checking for new content
+  
   while (Date.now() < endTime && isCommentingActive) {
     // Check if we should stop
     if (!isCommentingActive) {
-      console.log('Stopping scroll due to stop signal');
+      backgroundLog('❌ Stopping scroll due to stop signal');
       break;
     }
     
-    // Scroll to bottom
-    window.scrollTo(0, document.body.scrollHeight);
-    await wait(500);
+    const currentTime = Date.now();
+    const timeRemaining = Math.round((endTime - currentTime) / 1000);
+    backgroundLog(`📜 Scroll attempt ${scrollAttempts + 1}, ${timeRemaining}s remaining`);
     
-    // Check again after wait
-    if (!isCommentingActive) {
-      console.log('Stopping scroll due to stop signal after wait');
-      break;
+    // Record current scroll position
+    const initialScrollY = window.scrollY;
+    const initialDocHeight = document.body.scrollHeight;
+    
+    // Perform multiple deliberate scrolls
+    for (let i = 0; i < maxScrollsPerCheck && isCommentingActive; i++) {
+      const beforeScroll = window.scrollY;
+      
+      // Try different scroll methods for better reliability
+      if (i % 2 === 0) {
+        // Method 1: Scroll by fixed amount
+        window.scrollBy({ top: scrollAmount, behavior: 'instant' });
+      } else {
+        // Method 2: Scroll to bottom
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'instant' });
+      }
+      
+      // Manually trigger scroll events to help LinkedIn's listeners
+      triggerScrollEvents();
+      
+      const afterScroll = window.scrollY;
+      
+      if (afterScroll > beforeScroll) {
+        actualScrolls++;
+        backgroundLog(`📜 Scrolled from ${beforeScroll} to ${afterScroll} (${afterScroll - beforeScroll}px)`);
+      } else {
+        backgroundLog(`📜 Scroll attempt failed or reached bottom. Position: ${afterScroll}`);
+        // If we can't scroll anymore, we might be at the bottom
+        if (afterScroll === beforeScroll && afterScroll > 0) {
+          backgroundLog('📜 Reached bottom of page, breaking scroll loop');
+          break;
+        }
+      }
+      
+      // Small delay between individual scrolls
+      await wait(500);
     }
     
-    // Check if we've reached the end or if new content is loading
-    const currentHeight = document.body.scrollHeight;
-    await wait(1000);
-    const newHeight = document.body.scrollHeight;
+    scrollAttempts++;
     
-    // If no new content loaded, continue scrolling anyway
-    if (currentHeight === newHeight) {
-      console.log('No new content detected, continuing to scroll...');
+    // Longer pause to allow LinkedIn to process and load content
+    backgroundLog(`📜 Pausing ${pauseBetweenScrolls}ms for content loading...`);
+    await wait(pauseBetweenScrolls);
+    
+    // Check for new content
+    const newDocHeight = document.body.scrollHeight;
+    const currentPosts = document.querySelectorAll('.feed-shared-update-v2__control-menu-container');
+    const newPostCount = currentPosts.length;
+    
+    if (newPostCount > postCountBefore) {
+      const newPosts = newPostCount - postCountBefore;
+      backgroundLog(`📜 ✅ Content loaded! Found ${newPosts} new posts (total: ${newPostCount})`);
+      postCountBefore = newPostCount;
+    } else {
+      backgroundLog(`📜 ⚠️ No new posts detected. Still at ${newPostCount} posts`);
+    }
+    
+    // If document height increased, LinkedIn is loading content
+    if (newDocHeight > initialDocHeight) {
+      backgroundLog(`📜 Document height increased from ${initialDocHeight} to ${newDocHeight}`);
+    }
+    
+    // Check if we haven't made progress in a while
+    const timeElapsed = Date.now() - startTime;
+    if (timeElapsed > 8000 && actualScrolls === 0) {
+      backgroundWarn('📜 No successful scrolls in 8+ seconds. Page might be stuck or fully loaded.');
     }
   }
   
+  // Final metrics
+  postCountAfter = document.querySelectorAll('.feed-shared-update-v2__control-menu-container').length;
+  const totalNewPosts = postCountAfter - initialPosts.length;
+  const actualDuration = Math.round((Date.now() - startTime) / 1000);
+  
   console.log('Finished scrolling to load posts');
+  backgroundLog(`📜 Scroll completed! Duration: ${actualDuration}s, Scroll attempts: ${scrollAttempts}, Successful scrolls: ${actualScrolls}, New posts loaded: ${totalNewPosts} (${initialPosts.length} → ${postCountAfter})`);
+  
+  // Alert if we didn't load many posts
+  if (totalNewPosts < 10 && actualDuration > 10) {
+    backgroundWarn(`📜 ⚠️ Only loaded ${totalNewPosts} posts in ${actualDuration}s. This suggests background tab throttling is affecting performance.`);
+  }
 }
 
 // Function to process all posts on the feed
 async function processAllPostsOnFeed(commentDelay: number, maxPosts: number): Promise<void> {
   console.group('🎯 PROCESSING ALL POSTS - DETAILED DEBUG');
+  backgroundGroup('🎯 PROCESSING ALL POSTS - DETAILED DEBUG');
   console.log(`🎯 Starting to process posts on feed (max ${maxPosts} posts)...`);
+  backgroundLog(`🎯 Starting to process posts on feed (max ${maxPosts} posts)...`);
   
   // Find all post containers using the new structure
   const postContainers = document.querySelectorAll('.feed-shared-update-v2__control-menu-container');
   console.log(`🎯 Found ${postContainers.length} post containers with selector: .feed-shared-update-v2__control-menu-container`);
+  backgroundLog(`🎯 Found ${postContainers.length} post containers with selector: .feed-shared-update-v2__control-menu-container`);
   
   // Let's also try alternative selectors to see what we find
   const altSelector1 = document.querySelectorAll('.feed-shared-update-v2');
@@ -708,16 +882,21 @@ async function processAllPostsOnFeed(commentDelay: number, maxPosts: number): Pr
   console.log(`   - .feed-shared-update-v2: ${altSelector1.length} elements`);
   console.log(`   - [data-urn*="urn:li:activity"]: ${altSelector2.length} elements`);
   console.log(`   - .feed-shared-update-v2__content: ${altSelector3.length} elements`);
+  backgroundLog(`🎯 Alternative selector results: .feed-shared-update-v2: ${altSelector1.length}, [data-urn*="urn:li:activity"]: ${altSelector2.length}, .feed-shared-update-v2__content: ${altSelector3.length}`);
   
   if (postContainers.length === 0) {
     console.error('🚨 NO POSTS FOUND! This is why the automation stops immediately.');
     console.error('🚨 The page might not be fully loaded or the selector is wrong.');
+    backgroundError('🚨 NO POSTS FOUND! This is why the automation stops immediately.');
+    backgroundError('🚨 The page might not be fully loaded or the selector is wrong.');
     console.groupEnd();
+    backgroundGroupEnd();
     return;
   }
   
   let commentCount = 0;
   console.log(`🎯 Starting loop: commentCount=${commentCount}, maxPosts=${maxPosts}, isActive=${isCommentingActive}`);
+  backgroundLog(`🎯 Starting loop: commentCount=${commentCount}, maxPosts=${maxPosts}, isActive=${isCommentingActive}`);
   
   for (let i = 0; i < postContainers.length && isCommentingActive && commentCount < maxPosts; i++) {
     console.group(`🔄 POST ${i + 1}/${postContainers.length} - DETAILED PROCESSING`);
@@ -773,6 +952,8 @@ async function processAllPostsOnFeed(commentDelay: number, maxPosts: number): Pr
         console.groupEnd();
         continue;
       }
+
+      const postAuthorContent = authorInfo.name + postContent;
       
       console.log(`📝 Post content preview: ${postContent.substring(0, 100)}...`);
       
@@ -785,7 +966,7 @@ async function processAllPostsOnFeed(commentDelay: number, maxPosts: number): Pr
       
       // Generate comment using background script
       console.log(`🤖 Generating comment for post ${i + 1}...`);
-      const comment = await generateComment(postContent);
+      const comment = await generateComment(postAuthorContent);
       console.log(`🤖 Comment generation result for post ${i + 1}:`, comment ? 'SUCCESS' : 'FAILED');
       
       if (!comment) {
@@ -817,12 +998,14 @@ async function processAllPostsOnFeed(commentDelay: number, maxPosts: number): Pr
         await updateCommentCounts();
         
         console.log(`🎉 Successfully posted comment ${commentCount}/${maxPosts} on post by ${authorInfo.name}`);
+        backgroundLog(`🎉 Successfully posted comment ${commentCount}/${maxPosts} on post by ${authorInfo.name}`);
         console.group(`📊 Progress Update After Successful Comment`);
         console.log(`Comments posted this session: ${commentCount}/${maxPosts}`);
         console.log(`Authors commented on today:`, Array.from(commentedAuthors));
         console.log(`Remaining posts to process: ${postContainers.length - i - 1}`);
         console.log(`Should continue? commentCount(${commentCount}) < maxPosts(${maxPosts}) = ${commentCount < maxPosts}`);
         console.log(`Next iteration will be: ${i + 1} < ${postContainers.length} = ${i + 1 < postContainers.length}`);
+        backgroundLog(`📊 Progress Update: ${commentCount}/${maxPosts} comments posted. Remaining posts: ${postContainers.length - i - 1}. Should continue: ${commentCount < maxPosts}`);
         console.groupEnd();
         
         // Update background script with progress
@@ -835,6 +1018,7 @@ async function processAllPostsOnFeed(commentDelay: number, maxPosts: number): Pr
         // Check if we've reached the max posts limit
         if (commentCount >= maxPosts) {
           console.log(`✅ REACHED MAX POSTS LIMIT: commentCount(${commentCount}) >= maxPosts(${maxPosts}). Stopping...`);
+          backgroundLog(`✅ REACHED MAX POSTS LIMIT: commentCount(${commentCount}) >= maxPosts(${maxPosts}). Stopping...`);
           console.groupEnd();
           break;
         }
@@ -859,10 +1043,10 @@ async function processAllPostsOnFeed(commentDelay: number, maxPosts: number): Pr
           if (!isCommentingActive) {
             console.groupEnd();
             break;
-          }
+        }
           
           console.log(`✅ Delay completed, continuing to next post...`);
-        } else {
+      } else {
           console.log(`🔚 No delay needed - this was the last post or we've reached max comments`);
           console.log(`   - i(${i}) < postContainers.length-1(${postContainers.length - 1}): ${i < postContainers.length - 1}`);
           console.log(`   - commentCount(${commentCount}) < maxPosts(${maxPosts}): ${commentCount < maxPosts}`);
@@ -896,7 +1080,10 @@ async function processAllPostsOnFeed(commentDelay: number, maxPosts: number): Pr
   console.log(`     - Reached max posts? ${commentCount >= maxPosts}`);
   console.log(`     - Lost active status? ${!isCommentingActive}`);
   console.log(`     - Ran out of posts? ${postContainers.length === 0}`);
+  backgroundLog(`🏁 LOOP COMPLETED. Final stats: Posted ${commentCount}/${maxPosts} comments total. Final isCommentingActive: ${isCommentingActive}. Processed ${postContainers.length} total posts.`);
+  backgroundLog(`🏁 Loop exit reason: Reached max posts? ${commentCount >= maxPosts}, Lost active status? ${!isCommentingActive}, Ran out of posts? ${postContainers.length === 0}`);
   console.groupEnd();
+  backgroundGroupEnd();
 }
 
 // Function to extract author info from post container
@@ -940,7 +1127,8 @@ function extractAuthorInfo(postContainer: HTMLElement): { name: string } | null 
 function extractPostContent(postContainer: HTMLElement): string {
   try {
     // Look for the content container within the post
-    const contentContainer = postContainer.querySelector('.fie-impression-container');
+    // const contentContainer = postContainer.querySelector('.fie-impression-container');
+    const contentContainer = postContainer.querySelector('.feed-shared-inline-show-more-text');
     if (!contentContainer) {
       console.log('Content container not found');
       return '';
@@ -983,14 +1171,14 @@ async function generateComment(postContent: string): Promise<string> {
     // Retry mechanism for connection issues
     const attemptGeneration = (attempt: number = 1): void => {
       console.log(`🔄 Attempt ${attempt}/3: Sending comment generation request...`);
+    
+    chrome.runtime.sendMessage({
+      action: 'generateComment',
+      postContent: postContent
+    }, (response) => {
+      clearTimeout(timeout); // Clear the timeout since we got a response
       
-      chrome.runtime.sendMessage({
-        action: 'generateComment',
-        postContent: postContent
-      }, (response) => {
-        clearTimeout(timeout); // Clear the timeout since we got a response
-        
-        if (chrome.runtime.lastError) {
+      if (chrome.runtime.lastError) {
           console.error(`💥 ATTEMPT ${attempt} FAILED - Chrome runtime error:`, chrome.runtime.lastError);
           
           // Check if it's a connection error and retry
@@ -1002,11 +1190,11 @@ async function generateComment(postContent: string): Promise<string> {
             return;
           }
           
-          console.error('💥 FALLBACK REASON: Chrome runtime error during comment generation');
-          console.error('💥 CHROME ERROR:', chrome.runtime.lastError);
-          console.error('💥 This usually means the background script crashed or message passing failed');
-          resolve('Great post! Thanks for sharing.');
-        } else if (!response) {
+        console.error('💥 FALLBACK REASON: Chrome runtime error during comment generation');
+        console.error('💥 CHROME ERROR:', chrome.runtime.lastError);
+        console.error('💥 This usually means the background script crashed or message passing failed');
+        resolve('Great post! Thanks for sharing.');
+      } else if (!response) {
           console.error(`❌ ATTEMPT ${attempt} FAILED - No response received from background script`);
           
           // Retry if no response
@@ -1019,39 +1207,39 @@ async function generateComment(postContent: string): Promise<string> {
           }
           
           console.error('❌ FALLBACK REASON: No response received from background script after 3 attempts');
-          console.error('❌ RESPONSE NULL - Background script may have failed silently');
-          resolve('Great post! Thanks for sharing.');
-        } else if (!response.comment) {
-          console.error('⚠️ FALLBACK REASON: Response received but no comment field');
-          console.error('⚠️ INVALID RESPONSE STRUCTURE:', response);
-          console.error('⚠️ Expected response.comment but got:', Object.keys(response));
-          resolve('Great post! Thanks for sharing.');
-        } else if (response.comment === 'Great post! Thanks for sharing.') {
-          console.error('🚨 FALLBACK REASON: Background script returned the default fallback comment');
+        console.error('❌ RESPONSE NULL - Background script may have failed silently');
+        resolve('Great post! Thanks for sharing.');
+      } else if (!response.comment) {
+        console.error('⚠️ FALLBACK REASON: Response received but no comment field');
+        console.error('⚠️ INVALID RESPONSE STRUCTURE:', response);
+        console.error('⚠️ Expected response.comment but got:', Object.keys(response));
+        resolve('Great post! Thanks for sharing.');
+      } else if (response.comment === 'Great post! Thanks for sharing.') {
+        console.error('🚨 FALLBACK REASON: Background script returned the default fallback comment');
           console.error('🚨 This means the AI API failed and background script used fallback');
-          
-          // Check if error details were provided in the response
-          if (response.error) {
+        
+        // Check if error details were provided in the response
+        if (response.error) {
             console.group('🔥 AI API ERROR DETAILS FROM RESPONSE');
-            console.error('🔥 Error Message:', response.error.message);
-            console.error('🔥 Error Type:', response.error.name);
-            console.error('🔥 API Key Status:', response.error.apiKey);
-            console.error('🔥 Style Guide Status:', response.error.styleGuide);
-            console.error('🔥 Post Content Length:', response.error.postContentLength, 'characters');
-            if (response.error.stack) {
-              console.error('🔥 Stack Trace:', response.error.stack);
-            }
-            console.groupEnd();
-          } else {
-            console.error('🚨 No error details provided - check background script console');
+          console.error('🔥 Error Message:', response.error.message);
+          console.error('🔥 Error Type:', response.error.name);
+          console.error('🔥 API Key Status:', response.error.apiKey);
+          console.error('🔥 Style Guide Status:', response.error.styleGuide);
+          console.error('🔥 Post Content Length:', response.error.postContentLength, 'characters');
+          if (response.error.stack) {
+            console.error('🔥 Stack Trace:', response.error.stack);
           }
-          
-          resolve(response.comment);
+          console.groupEnd();
         } else {
-          console.log('✅ Successfully received generated comment:', response.comment.substring(0, 100) + '...');
-          resolve(response.comment);
+          console.error('🚨 No error details provided - check background script console');
         }
-      });
+        
+        resolve(response.comment);
+      } else {
+        console.log('✅ Successfully received generated comment:', response.comment.substring(0, 100) + '...');
+        resolve(response.comment);
+      }
+    });
     };
     
     // Start the first attempt
@@ -1202,28 +1390,28 @@ function wait(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Updated audio functions to work with the new Web Audio API approach
-function keepTabActiveAudio() {
-  try {
-    console.log('🔊 Continuous audio is already running from user interaction...');
+// // Updated audio functions to work with the new Web Audio API approach
+// function keepTabActiveAudio() {
+//   try {
+//     console.log('🔊 Continuous audio is already running from user interaction...');
     
-    // Audio is already started by the start button click
-    // This function now just ensures it keeps running
-    if (!audioContext || !currentOscillator || !audioElement) {
-      console.log('🔊 Audio not running, starting fresh...');
-      // If audio isn't running for some reason, try to start it
-      // Note: This might fail without user gesture
-      injectAndPlayContinuousSound().catch(error => {
-        console.warn('⚠️ Failed to restart audio without user gesture:', error);
-      });
-    } else {
-      console.log('🔊 Audio already active and continuous');
-    }
+//     // Audio is already started by the start button click
+//     // This function now just ensures it keeps running
+//     if (!audioContext || !currentOscillator || !audioElement) {
+//       console.log('🔊 Audio not running, starting fresh...');
+//       // If audio isn't running for some reason, try to start it
+//       // Note: This might fail without user gesture
+//       injectAndPlayContinuousSound().catch(error => {
+//         console.warn('⚠️ Failed to restart audio without user gesture:', error);
+//       });
+//     } else {
+//       console.log('🔊 Audio already active and continuous');
+//     }
     
-  } catch (error) {
-    console.warn('⚠️ Audio check failed:', error);
-  }
-}
+//   } catch (error) {
+//     console.warn('⚠️ Audio check failed:', error);
+//   }
+// }
 
 function stopTabActiveAudio() {
   try {

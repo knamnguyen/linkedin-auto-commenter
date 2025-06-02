@@ -51,9 +51,9 @@ const DEFAULT_API_KEY = 'AIzaSyDXwKB6h-jGMaOrq88461CcJt4KZpwh8aM';
 export default function Popup() {
   const [styleGuide, setStyleGuide] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [scrollDuration, setScrollDuration] = useState(10);
-  const [commentDelay, setCommentDelay] = useState(10);
-  const [maxPosts, setMaxPosts] = useState(20);
+  const [scrollDuration, setScrollDuration] = useState(5);
+  const [commentDelay, setCommentDelay] = useState(5);
+  const [maxPosts, setMaxPosts] = useState(5);
   const [isRunning, setIsRunning] = useState(false);
   const [status, setStatus] = useState('');
   const [commentCount, setCommentCount] = useState(0);
@@ -68,16 +68,20 @@ export default function Popup() {
       'commentDelay', 'maxPosts', 'totalAllTimeComments',
       'isRunning', 'currentCommentCount'
     ], (result) => {
-      if (result.apiKey) setApiKey(result.apiKey);
-      if (result.styleGuide) setStyleGuide(result.styleGuide);
-      if (result.scrollDuration) setScrollDuration(result.scrollDuration);
-      if (result.commentDelay) setCommentDelay(result.commentDelay);
-      if (result.maxPosts) setMaxPosts(result.maxPosts);
-      if (result.totalAllTimeComments) setTotalAllTimeComments(result.totalAllTimeComments);
+      console.log('Popup: Loading settings from storage:', result);
+      
+      if (result.apiKey !== undefined) setApiKey(result.apiKey);
+      if (result.styleGuide !== undefined) setStyleGuide(result.styleGuide);
+      if (result.scrollDuration !== undefined) setScrollDuration(result.scrollDuration);
+      if (result.commentDelay !== undefined) setCommentDelay(result.commentDelay);
+      if (result.maxPosts !== undefined) setMaxPosts(result.maxPosts);
+      if (result.totalAllTimeComments !== undefined) setTotalAllTimeComments(result.totalAllTimeComments);
       
       // Restore running state if it exists
-      if (result.isRunning) setIsRunning(result.isRunning);
-      if (result.currentCommentCount) setCommentCount(result.currentCommentCount);
+      if (result.isRunning !== undefined) setIsRunning(result.isRunning);
+      if (result.currentCommentCount !== undefined) setCommentCount(result.currentCommentCount);
+      
+      console.log('Popup: Settings loaded - maxPosts:', result.maxPosts, 'scrollDuration:', result.scrollDuration, 'commentDelay:', result.commentDelay);
     });
 
     // Load today's comments
@@ -173,16 +177,19 @@ export default function Popup() {
   };
 
   const handleScrollDurationChange = (value: number) => {
+    console.log('Popup: Saving scrollDuration:', value);
     setScrollDuration(value);
     chrome.storage.local.set({ scrollDuration: value });
   };
 
   const handleCommentDelayChange = (value: number) => {
+    console.log('Popup: Saving commentDelay:', value);
     setCommentDelay(value);
     chrome.storage.local.set({ commentDelay: value });
   };
 
   const handleMaxPostsChange = (value: number) => {
+    console.log('Popup: Saving maxPosts:', value);
     setMaxPosts(value);
     chrome.storage.local.set({ maxPosts: value });
   };
@@ -208,19 +215,31 @@ export default function Popup() {
       return;
     }
 
+    console.log('Popup: Starting with current state values:', {
+      scrollDuration,
+      commentDelay,
+      maxPosts,
+      styleGuide: styleGuide.substring(0, 50) + '...',
+      hasApiKey: !!apiKey
+    });
+
     setIsRunning(true);
     setCommentCount(0);
     setStatus('Starting LinkedIn auto-commenting...');
 
     try {
-      await chrome.runtime.sendMessage({
+      const messageData = {
         action: 'startAutoCommenting',
         styleGuide: styleGuide.trim(),
         apiKey: apiKey.trim(),
         scrollDuration: scrollDuration,
         commentDelay: commentDelay,
         maxPosts: maxPosts
-      });
+      };
+      
+      console.log('Popup: Sending message to background:', messageData);
+      
+      await chrome.runtime.sendMessage(messageData);
     } catch (error) {
       console.error('Error starting auto-commenting:', error);
       setStatus('Error starting the process. Please try again.');
