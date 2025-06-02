@@ -184,7 +184,8 @@ const startAutoCommenting = async (
     
     feedTab = await chrome.tabs.create({
       url: 'https://www.linkedin.com/feed/',
-      active: true // Start with focus so user can see it
+      active: true, // Start with focus so user can see it
+      pinned: true  // Pin the tab to provide exemption from throttling
     });
     
     if (!feedTab || !feedTab.id) {
@@ -193,7 +194,8 @@ const startAutoCommenting = async (
 
     autoCommentingState.feedTabId = feedTab.id;
     console.log(`LinkedIn tab created with ID: ${feedTab.id}`);
-    sendStatusUpdate('LinkedIn tab created successfully...');
+    console.log(`LinkedIn tab pinned status: ${feedTab.pinned}`);
+    sendStatusUpdate('LinkedIn tab created successfully as pinned tab (anti-throttling)...');
 
     sendStatusUpdate('Waiting for LinkedIn page to load...');
 

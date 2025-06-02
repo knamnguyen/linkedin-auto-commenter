@@ -236,10 +236,11 @@ function showStartButton() {
           return;
         }
         
-        startNewCommentingFlow(scrollDuration, commentDelay, maxPosts, styleGuide, apiKey);
+        // Start the commenting flow but delay tab switching until after scrolling
+        startNewCommentingFlowWithDelayedTabSwitch(scrollDuration, commentDelay, maxPosts, styleGuide, apiKey);
       });
       await wait(1000);
-      startButton.textContent = '💬 Moving back to original tab';
+      startButton.textContent = '💬 Starting automation';
       await wait(1000);
       
       console.log('✅ Full flow started successfully!');
@@ -247,10 +248,7 @@ function showStartButton() {
 
     
       
-      console.log('💬 Step 3: Moving back to the original tab...');
-      chrome.runtime.sendMessage({
-        action: 'moveToOriginalTab'
-      });
+      // Don't move to original tab immediately - let the commenting flow handle it after scrolling
       
     } catch (error) {
       console.error('❌ Failed to start:', error);
@@ -408,7 +406,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     showStartButton();
     sendResponse({ success: true });
   } else if (request.action === 'startNewCommentingFlow') {
-    startNewCommentingFlow(
+    startNewCommentingFlowWithDelayedTabSwitch(
       request.scrollDuration, 
       request.commentDelay, 
       request.maxPosts, 
@@ -633,8 +631,8 @@ async function updateCommentCounts(): Promise<void> {
   });
 }
 
-// Main function to start the new commenting flow
-async function startNewCommentingFlow(
+// Main function to start the new commenting flow with delayed tab switching
+async function startNewCommentingFlowWithDelayedTabSwitch(
   scrollDuration: number, 
   commentDelay: number, 
   maxPosts: number, 
@@ -649,6 +647,10 @@ async function startNewCommentingFlow(
   console.log(`   - maxPosts: ${maxPosts}`);
   console.log(`   - isCommentingActive: ${isCommentingActive}`);
   backgroundLog(`   - scrollDuration: ${scrollDuration}, commentDelay: ${commentDelay}, maxPosts: ${maxPosts}, isCommentingActive: ${isCommentingActive}`);
+  
+  // Apply tab active state spoofing immediately to prevent LinkedIn from detecting background tab
+  await forceTabActiveState();
+  backgroundLog('🎭 Applied LinkedIn background tab bypass techniques');
   
   // // Start anti-throttling mechanisms to prevent tab throttling
   // keepTabActiveAudio();
@@ -669,6 +671,16 @@ async function startNewCommentingFlow(
     console.log(`📜 Step 1: Scrolling feed for ${scrollDuration} seconds...`);
     backgroundLog(`📜 Step 1: Scrolling feed for ${scrollDuration} seconds...`);
     await scrollFeedToLoadPosts(scrollDuration);
+    
+    // IMPORTANT: Only move to original tab AFTER scrolling is completely finished
+    console.log('📜 Step 1.5: Scrolling completed, now moving back to original tab...');
+    backgroundLog('📜 Step 1.5: Scrolling completed, now moving back to original tab...');
+    chrome.runtime.sendMessage({
+      action: 'moveToOriginalTab'
+    });
+    
+    // Wait a moment for tab switch to complete
+    await wait(2000);
     
     if (!isCommentingActive) {
       console.log('❌ Commenting stopped during scroll phase');
@@ -726,27 +738,191 @@ async function startNewCommentingFlow(
   }
 }
 
-// Helper function to manually trigger scroll events for better LinkedIn compatibility
-function triggerScrollEvents() {
-  // Manually dispatch scroll events to help LinkedIn's listeners
-  const scrollEvent = new Event('scroll', { bubbles: true, cancelable: true });
-  window.dispatchEvent(scrollEvent);
-  document.dispatchEvent(scrollEvent);
-  
-  // Also trigger wheel events which some sites listen for
-  const wheelEvent = new WheelEvent('wheel', { 
-    bubbles: true, 
-    cancelable: true, 
-    deltaY: 100,
-    deltaMode: WheelEvent.DOM_DELTA_PIXEL
-  });
-  window.dispatchEvent(wheelEvent);
+// Helper function to request notification permission for anti-throttling
+async function requestNotificationPermissionForAntiThrottling(): Promise<boolean> {
+  try {
+    if (!('Notification' in window)) {
+      backgroundLog('📜 🔔 Notifications not supported in this browser');
+      return false;
+    }
+    
+    if (Notification.permission === 'granted') {
+      backgroundLog('📜 🔔 Notification permission already granted');
+      return true;
+    }
+    
+    if (Notification.permission === 'denied') {
+      backgroundLog('📜 🔔 Notification permission previously denied');
+      return false;
+    }
+    
+    // Request notification permission
+    const permission = await Notification.requestPermission();
+    
+    if (permission === 'granted') {
+      backgroundLog('📜 🔔 ✅ Notification permission granted - should help with anti-throttling');
+      
+      // Show a brief notification to confirm it works
+      new Notification('LinkedIn Auto Commenter', {
+        body: 'Notification permission granted for better performance',
+        icon: 'https://static.licdn.com/sc/h/3m6veb8kxx0k7v4c6u7q6z8hm',
+        silent: true
+      });
+      
+      return true;
+    } else {
+      backgroundLog('📜 🔔 ❌ Notification permission denied');
+      return false;
+    }
+    
+  } catch (error) {
+    backgroundWarn('📜 🔔 ⚠️ Failed to request notification permission:', error);
+    return false;
+  }
 }
 
-// Function to scroll feed and load posts - Optimized for background tabs
+// Helper function to force LinkedIn to think tab is active
+async function forceTabActiveState() {
+  try {
+    // Step 1: Request notification permission for anti-throttling
+    await requestNotificationPermissionForAntiThrottling();
+    
+    // Step 2: Override document.hidden and document.visibilityState
+    Object.defineProperty(document, 'hidden', {
+      value: false,
+      writable: false
+    });
+    
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      writable: false
+    });
+    
+    // Step 3: Override document.hasFocus to return true
+    const originalHasFocus = document.hasFocus;
+    document.hasFocus = function() {
+      return true;
+    };
+    
+    // Step 4: Prevent visibility change events
+    const originalAddEventListener = document.addEventListener;
+    document.addEventListener = function(type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) {
+      if (type === 'visibilitychange') {
+        // Don't add visibility change listeners
+        return;
+      }
+      if (listener === null) {
+        return;
+      }
+      return originalAddEventListener.call(this, type, listener, options);
+    };
+    
+    backgroundLog('📜 🎭 Applied comprehensive tab active state spoofing');
+    
+  } catch (error) {
+    backgroundWarn('📜 ⚠️ Failed to apply tab active state spoofing:', error);
+  }
+}
+
+// Helper function to manually trigger LinkedIn's content loading
+function forceTriggerLinkedInLoading() {
+  try {
+    // Trigger visibility change event to "visible"
+    const visibilityEvent = new Event('visibilitychange', { bubbles: true });
+    document.dispatchEvent(visibilityEvent);
+    
+    // Trigger focus events
+    const focusEvent = new Event('focus', { bubbles: true });
+    window.dispatchEvent(focusEvent);
+    document.dispatchEvent(focusEvent);
+    
+    // Trigger page show event
+    const pageShowEvent = new PageTransitionEvent('pageshow', { 
+      bubbles: true, 
+      persisted: false 
+    });
+    window.dispatchEvent(pageShowEvent);
+    
+    // PRIORITY: Click LinkedIn's infinite scroll load button
+    const infiniteScrollButton = document.querySelector('.scaffold-finite-scroll__load-button') as HTMLButtonElement;
+    if (infiniteScrollButton && !infiniteScrollButton.disabled) {
+      infiniteScrollButton.click();
+      backgroundLog('📜 🎯 Clicked LinkedIn infinite scroll load button (.scaffold-finite-scroll__load-button)');
+    } else if (infiniteScrollButton && infiniteScrollButton.disabled) {
+      backgroundLog('📜 ⚠️ Infinite scroll button found but disabled');
+    } else {
+      backgroundLog('📜 ℹ️ No infinite scroll button found (.scaffold-finite-scroll__load-button)');
+    }
+    
+    
+    
+  } catch (error) {
+    backgroundWarn('📜 ⚠️ Failed to trigger LinkedIn loading:', error);
+  }
+}
+
+// Helper function to manually trigger scroll events for better LinkedIn compatibility
+function triggerScrollEvents() {
+  try {
+    // Create scroll event (following the 10-year-old solution approach)
+    const scrollEvent = new Event('scroll', { bubbles: true, cancelable: true });
+    
+    // Method 1: Traditional window/document events
+    window.dispatchEvent(scrollEvent);
+    document.dispatchEvent(scrollEvent);
+    
+    // Method 2: Target LinkedIn's specific feed containers (key insight from old solution)
+    const linkedInFeedSelectors = [
+      '.scaffold-layout__main',           // Main content area
+      '.feed-container-theme',            // Feed container
+      '.scaffold-finite-scroll',          // Infinite scroll container
+      '.feed-shared-update-v2',           // Individual post containers
+      '.application-outlet',              // Main app container
+      '.feed-outlet',                     // Feed outlet
+      '#main',                           // Main element
+      '[role="main"]',                   // ARIA main role
+      '.ember-application'               // Ember app container
+    ];
+    
+    // Dispatch scroll events to each LinkedIn container we can find
+    linkedInFeedSelectors.forEach(selector => {
+      const elements = document.querySelectorAll(selector);
+      elements.forEach(element => {
+        if (element) {
+          element.dispatchEvent(scrollEvent);
+          backgroundLog(`📜 🎯 Triggered scroll event on: ${selector}`);
+        }
+      });
+    });
+    
+    // Method 3: Also trigger wheel events (some sites listen for these)
+    const wheelEvent = new WheelEvent('wheel', { 
+      bubbles: true, 
+      cancelable: true, 
+      deltaY: 100,
+      deltaMode: WheelEvent.DOM_DELTA_PIXEL
+    });
+    window.dispatchEvent(wheelEvent);
+    
+    // Trigger wheel events on main containers too
+    const mainContainer = document.querySelector('.scaffold-layout__main, .feed-container-theme');
+    if (mainContainer) {
+      mainContainer.dispatchEvent(wheelEvent);
+      backgroundLog('📜 🎯 Triggered wheel event on main LinkedIn container');
+    }
+    
+  } catch (error) {
+    backgroundWarn('📜 ⚠️ Failed to trigger scroll events:', error);
+  }
+}
+
+// Function to scroll feed and load posts - Normal scrolling with complete duration
 async function scrollFeedToLoadPosts(duration: number): Promise<void> {
   console.log(`Scrolling feed for ${duration} seconds to load posts...`);
-  backgroundLog(`📜 Starting optimized background scroll for ${duration} seconds...`);
+  backgroundLog(`📜 Starting normal scrolling for ${duration} seconds...`);
+  
+  // Apply tab active state spoofing immediately
+  await forceTabActiveState();
   
   const startTime = Date.now();
   const endTime = startTime + (duration * 1000);
@@ -755,17 +931,17 @@ async function scrollFeedToLoadPosts(duration: number): Promise<void> {
   let scrollAttempts = 0;
   let actualScrolls = 0;
   let postCountBefore = 0;
-  let postCountAfter = 0;
+  let lastPostCount = 0;
   
   // Get initial post count
   const initialPosts = document.querySelectorAll('.feed-shared-update-v2__control-menu-container');
   postCountBefore = initialPosts.length;
+  lastPostCount = postCountBefore;
   backgroundLog(`📜 Initial post count: ${postCountBefore}`);
   
-  // Use longer intervals and larger scroll amounts for background tabs
-  const scrollAmount = 1200; // Larger scroll increment
-  const pauseBetweenScrolls = 3000; // 3 second pause to allow LinkedIn to load content
-  const maxScrollsPerCheck = 3; // Number of scrolls before checking for new content
+  // Use normal scrolling with reasonable intervals
+  const scrollAmount = 800; // Normal scroll increment
+  const pauseBetweenScrolls = 3000; // 3 second pause to allow content loading
   
   while (Date.now() < endTime && isCommentingActive) {
     // Check if we should stop
@@ -778,86 +954,68 @@ async function scrollFeedToLoadPosts(duration: number): Promise<void> {
     const timeRemaining = Math.round((endTime - currentTime) / 1000);
     backgroundLog(`📜 Scroll attempt ${scrollAttempts + 1}, ${timeRemaining}s remaining`);
     
-    // Record current scroll position
-    const initialScrollY = window.scrollY;
-    const initialDocHeight = document.body.scrollHeight;
-    
-    // Perform multiple deliberate scrolls
-    for (let i = 0; i < maxScrollsPerCheck && isCommentingActive; i++) {
-      const beforeScroll = window.scrollY;
-      
-      // Try different scroll methods for better reliability
-      if (i % 2 === 0) {
-        // Method 1: Scroll by fixed amount
-        window.scrollBy({ top: scrollAmount, behavior: 'instant' });
-      } else {
-        // Method 2: Scroll to bottom
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'instant' });
-      }
-      
-      // Manually trigger scroll events to help LinkedIn's listeners
-      triggerScrollEvents();
-      
-      const afterScroll = window.scrollY;
-      
-      if (afterScroll > beforeScroll) {
-        actualScrolls++;
-        backgroundLog(`📜 Scrolled from ${beforeScroll} to ${afterScroll} (${afterScroll - beforeScroll}px)`);
-      } else {
-        backgroundLog(`📜 Scroll attempt failed or reached bottom. Position: ${afterScroll}`);
-        // If we can't scroll anymore, we might be at the bottom
-        if (afterScroll === beforeScroll && afterScroll > 0) {
-          backgroundLog('📜 Reached bottom of page, breaking scroll loop');
-          break;
-        }
-      }
-      
-      // Small delay between individual scrolls
-      await wait(500);
-    }
-    
     scrollAttempts++;
     
-    // Longer pause to allow LinkedIn to process and load content
+    // Record current scroll position
+    const beforeScroll = window.scrollY;
+    
+    // Perform scroll
+    window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+    
+    // Trigger scroll events on LinkedIn's specific containers
+    triggerScrollEvents();
+    
+    // Wait a moment for scroll to complete
+    await wait(1000);
+    
+    const afterScroll = window.scrollY;
+    
+    if (afterScroll > beforeScroll) {
+      actualScrolls++;
+      backgroundLog(`📜 Scrolled from ${beforeScroll} to ${afterScroll} (${afterScroll - beforeScroll}px)`);
+    } else {
+      backgroundLog(`📜 Scroll attempt failed or reached bottom. Position: ${afterScroll}`);
+      // If we can't scroll anymore, still continue for the full duration
+      // Sometimes LinkedIn loads content even when we can't scroll further
+    }
+    
+    // Pause to allow LinkedIn to process and load content
     backgroundLog(`📜 Pausing ${pauseBetweenScrolls}ms for content loading...`);
     await wait(pauseBetweenScrolls);
     
-    // Check for new content
-    const newDocHeight = document.body.scrollHeight;
+    // Check for new content after each scroll
     const currentPosts = document.querySelectorAll('.feed-shared-update-v2__control-menu-container');
     const newPostCount = currentPosts.length;
     
-    if (newPostCount > postCountBefore) {
-      const newPosts = newPostCount - postCountBefore;
+    if (newPostCount > lastPostCount) {
+      const newPosts = newPostCount - lastPostCount;
       backgroundLog(`📜 ✅ Content loaded! Found ${newPosts} new posts (total: ${newPostCount})`);
-      postCountBefore = newPostCount;
+      lastPostCount = newPostCount;
     } else {
       backgroundLog(`📜 ⚠️ No new posts detected. Still at ${newPostCount} posts`);
     }
     
-    // If document height increased, LinkedIn is loading content
-    if (newDocHeight > initialDocHeight) {
-      backgroundLog(`📜 Document height increased from ${initialDocHeight} to ${newDocHeight}`);
-    }
-    
-    // Check if we haven't made progress in a while
-    const timeElapsed = Date.now() - startTime;
-    if (timeElapsed > 8000 && actualScrolls === 0) {
-      backgroundWarn('📜 No successful scrolls in 8+ seconds. Page might be stuck or fully loaded.');
+    // Apply anti-throttling techniques periodically
+    if (scrollAttempts % 3 === 0) {
+      await forceTabActiveState();
+      forceTriggerLinkedInLoading();
+      backgroundLog(`📜 🎭 Reapplied anti-throttling techniques`);
     }
   }
   
   // Final metrics
-  postCountAfter = document.querySelectorAll('.feed-shared-update-v2__control-menu-container').length;
-  const totalNewPosts = postCountAfter - initialPosts.length;
+  const finalPosts = document.querySelectorAll('.feed-shared-update-v2__control-menu-container');
+  const totalNewPosts = finalPosts.length - initialPosts.length;
   const actualDuration = Math.round((Date.now() - startTime) / 1000);
   
   console.log('Finished scrolling to load posts');
-  backgroundLog(`📜 Scroll completed! Duration: ${actualDuration}s, Scroll attempts: ${scrollAttempts}, Successful scrolls: ${actualScrolls}, New posts loaded: ${totalNewPosts} (${initialPosts.length} → ${postCountAfter})`);
+  backgroundLog(`📜 Scroll completed! Duration: ${actualDuration}s, Scroll attempts: ${scrollAttempts}, Successful scrolls: ${actualScrolls}, New posts loaded: ${totalNewPosts} (${initialPosts.length} → ${finalPosts.length})`);
   
   // Alert if we didn't load many posts
-  if (totalNewPosts < 10 && actualDuration > 10) {
-    backgroundWarn(`📜 ⚠️ Only loaded ${totalNewPosts} posts in ${actualDuration}s. This suggests background tab throttling is affecting performance.`);
+  if (totalNewPosts < 15 && actualDuration > 15) {
+    backgroundWarn(`📜 ⚠️ Only loaded ${totalNewPosts} posts in ${actualDuration}s. LinkedIn might be throttling background tabs.`);
+  } else if (totalNewPosts >= 20) {
+    backgroundLog(`📜 🎉 Great success! Loaded ${totalNewPosts} posts using normal scrolling.`);
   }
 }
 
