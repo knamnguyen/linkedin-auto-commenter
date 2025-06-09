@@ -236,20 +236,69 @@ function showStartButton() {
           return;
         }
         
+        // Update button status for scrolling phase
+        startButton.textContent = `📜 Scrolling to load posts (${scrollDuration}s) - DON'T navigate away!`;
+        startButton.style.background = '#ff9500';
+        startButton.style.fontSize = '18px';
+        subtitle.textContent = 'Loading posts from LinkedIn feed - please keep this tab visible';
+        
+        // Add dynamic status panel to the overlay
+        const statusPanel = document.createElement('div');
+        statusPanel.id = 'linkedin-status-panel';
+        statusPanel.style.cssText = `
+          background: rgba(255, 255, 255, 0.15) !important;
+          border-radius: 12px !important;
+          padding: 20px !important;
+          margin-top: 20px !important;
+          border: 1px solid rgba(255, 255, 255, 0.3) !important;
+          font-family: monospace !important;
+          font-size: 14px !important;
+          line-height: 1.6 !important;
+        `;
+        
+        const initialPosts = document.querySelectorAll('.feed-shared-update-v2__control-menu-container').length;
+        
+        statusPanel.innerHTML = `
+          <div style="color: white !important; margin-bottom: 12px !important;">
+            <strong>📊 AUTOMATION SETTINGS</strong>
+          </div>
+          <div style="color: #e0e0e0 !important; margin-bottom: 8px !important;">
+            📜 Scroll Duration: <span style="color: #90EE90 !important;">${scrollDuration} seconds</span>
+          </div>
+          <div style="color: #e0e0e0 !important; margin-bottom: 8px !important;">
+            ⏱️ Comment Delay: <span style="color: #90EE90 !important;">${commentDelay} seconds</span>
+          </div>
+          <div style="color: #e0e0e0 !important; margin-bottom: 16px !important;">
+            🎯 Max Posts: <span style="color: #90EE90 !important;">${maxPosts} posts</span>
+          </div>
+          
+          <div style="color: white !important; margin-bottom: 12px !important;">
+            <strong>📈 REAL-TIME STATUS</strong>
+          </div>
+          <div id="time-remaining" style="color: #FFD700 !important; margin-bottom: 8px !important;">
+            ⏰ Time Remaining: <span style="color: #FFA500 !important;">${scrollDuration}s</span>
+          </div>
+          <div id="posts-loaded" style="color: #87CEEB !important; margin-bottom: 8px !important;">
+            📝 Posts Loaded: <span style="color: #00BFFF !important;">${initialPosts} posts</span>
+          </div>
+          <div id="scroll-progress" style="color: #DDA0DD !important;">
+            🔄 Status: <span style="color: #DA70D6 !important;">Starting scroll...</span>
+          </div>
+        `;
+        
+        // Add status panel to the container (after the info text)
+        const container = overlay.querySelector('div');
+        if (container) {
+          container.appendChild(statusPanel);
+        }
+        
         // Start the commenting flow but delay tab switching until after scrolling
-        startNewCommentingFlowWithDelayedTabSwitch(scrollDuration, commentDelay, maxPosts, styleGuide, apiKey);
+        startNewCommentingFlowWithDelayedTabSwitch(scrollDuration, commentDelay, maxPosts, styleGuide, apiKey, overlay, startButton, subtitle, statusPanel);
       });
-      await wait(1000);
-      startButton.textContent = '💬 Starting automation';
-      await wait(1000);
+      
+      // Don't remove overlay here - let the commenting flow handle it
       
       console.log('✅ Full flow started successfully!');
-      overlay.remove();
-
-    
-      
-      // Don't move to original tab immediately - let the commenting flow handle it after scrolling
-      
     } catch (error) {
       console.error('❌ Failed to start:', error);
       startButton.textContent = '❌ Failed - Try Again';
@@ -411,7 +460,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       request.commentDelay, 
       request.maxPosts, 
       request.styleGuide, 
-      request.apiKey
+      request.apiKey,
+      null as any, // overlay not available from this path
+      null as any, // startButton not available from this path  
+      null as any, // subtitle not available from this path
+      null as any  // statusPanel not available from this path
     );
     sendResponse({ success: true });
   } else if (request.action === 'stopCommentingFlow') {
@@ -637,7 +690,11 @@ async function startNewCommentingFlowWithDelayedTabSwitch(
   commentDelay: number, 
   maxPosts: number, 
   styleGuide: string, 
-  apiKey: string
+  apiKey: string,
+  overlay: HTMLDivElement,
+  startButton: HTMLButtonElement,
+  subtitle: HTMLParagraphElement,
+  statusPanel: HTMLDivElement
 ) {
   isCommentingActive = true;
   console.log(`🚀 Starting new commenting flow with parameters:`);
@@ -670,7 +727,7 @@ async function startNewCommentingFlowWithDelayedTabSwitch(
     // Step 1: Scroll down for specified duration to load posts
     console.log(`📜 Step 1: Scrolling feed for ${scrollDuration} seconds...`);
     backgroundLog(`📜 Step 1: Scrolling feed for ${scrollDuration} seconds...`);
-    await scrollFeedToLoadPosts(scrollDuration);
+    await scrollFeedToLoadPosts(scrollDuration, statusPanel);
     
     // IMPORTANT: Only move to original tab AFTER scrolling is completely finished
     console.log('📜 Step 1.5: Scrolling completed, now moving back to original tab...');
@@ -694,6 +751,19 @@ async function startNewCommentingFlowWithDelayedTabSwitch(
     backgroundLog('📜 Step 2: Scrolling back to top...');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     await wait(2000);
+    
+    // Update overlay status after scrolling is complete (if overlay elements exist)
+    if (overlay && startButton && subtitle) {
+      startButton.textContent = '✅ Posts loaded! You can now move away from this tab';
+      startButton.style.background = '#28a745';
+      startButton.style.fontSize = '20px';
+      subtitle.textContent = 'All posts have been loaded. Switching to automation mode...';
+      
+      // Wait a moment to show the message, then remove overlay
+      await wait(3000);
+      overlay.remove();
+      backgroundLog('📜 🎭 Overlay removed after successful post loading');
+    }
     
     if (!isCommentingActive) {
       console.log('❌ Commenting stopped during scroll to top');
@@ -916,10 +986,10 @@ function triggerScrollEvents() {
   }
 }
 
-// Function to scroll feed and load posts - Normal scrolling with complete duration
-async function scrollFeedToLoadPosts(duration: number): Promise<void> {
-  console.log(`Scrolling feed for ${duration} seconds to load posts...`);
-  backgroundLog(`📜 Starting normal scrolling for ${duration} seconds...`);
+// Function to scroll feed and load posts - Aggressive scrolling to bottom
+async function scrollFeedToLoadPosts(duration: number, statusPanel?: HTMLDivElement): Promise<void> {
+  console.log(`Aggressively scrolling feed for ${duration} seconds to load posts...`);
+  backgroundLog(`📜 Starting aggressive scroll-to-bottom for ${duration} seconds...`);
   
   // Apply tab active state spoofing immediately
   await forceTabActiveState();
@@ -929,7 +999,6 @@ async function scrollFeedToLoadPosts(duration: number): Promise<void> {
   
   // Track metrics for debugging
   let scrollAttempts = 0;
-  let actualScrolls = 0;
   let postCountBefore = 0;
   let lastPostCount = 0;
   
@@ -939,9 +1008,8 @@ async function scrollFeedToLoadPosts(duration: number): Promise<void> {
   lastPostCount = postCountBefore;
   backgroundLog(`📜 Initial post count: ${postCountBefore}`);
   
-  // Use normal scrolling with reasonable intervals
-  const scrollAmount = 800; // Normal scroll increment
-  const pauseBetweenScrolls = 3000; // 3 second pause to allow content loading
+  // Use aggressive scrolling - just go to bottom repeatedly
+  const pauseBetweenScrolls = 2000; // 2 second pause to allow content loading
   
   while (Date.now() < endTime && isCommentingActive) {
     // Check if we should stop
@@ -952,36 +1020,49 @@ async function scrollFeedToLoadPosts(duration: number): Promise<void> {
     
     const currentTime = Date.now();
     const timeRemaining = Math.round((endTime - currentTime) / 1000);
-    backgroundLog(`📜 Scroll attempt ${scrollAttempts + 1}, ${timeRemaining}s remaining`);
+    backgroundLog(`📜 Aggressive scroll attempt ${scrollAttempts + 1}, ${timeRemaining}s remaining`);
+    
+    // Update status panel if available
+    if (statusPanel) {
+      const currentPosts = document.querySelectorAll('.feed-shared-update-v2__control-menu-container').length;
+      const newPostsThisSession = currentPosts - postCountBefore;
+      
+      const timeRemainingElement = statusPanel.querySelector('#time-remaining span');
+      const postsLoadedElement = statusPanel.querySelector('#posts-loaded span');
+      const scrollProgressElement = statusPanel.querySelector('#scroll-progress span');
+      
+      if (timeRemainingElement) {
+        timeRemainingElement.textContent = `${timeRemaining}s`;
+      }
+      
+      if (postsLoadedElement) {
+        postsLoadedElement.textContent = `${currentPosts} posts (+${newPostsThisSession} this session)`;
+      }
+      
+      if (scrollProgressElement) {
+        scrollProgressElement.textContent = `Scroll attempt ${scrollAttempts + 1} - Loading content...`;
+      }
+    }
     
     scrollAttempts++;
     
     // Record current scroll position
     const beforeScroll = window.scrollY;
+    const documentHeight = document.body.scrollHeight;
     
-    // Perform scroll
-    window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+    // Aggressive scroll: Go straight to bottom
+    window.scrollTo({ top: documentHeight, behavior: 'smooth' });
     
     // Trigger scroll events on LinkedIn's specific containers
     triggerScrollEvents();
     
-    // Wait a moment for scroll to complete
-    await wait(1000);
+    // Wait for scroll to complete and content to load
+    await wait(pauseBetweenScrolls);
     
     const afterScroll = window.scrollY;
+    const newDocumentHeight = document.body.scrollHeight;
     
-    if (afterScroll > beforeScroll) {
-      actualScrolls++;
-      backgroundLog(`📜 Scrolled from ${beforeScroll} to ${afterScroll} (${afterScroll - beforeScroll}px)`);
-    } else {
-      backgroundLog(`📜 Scroll attempt failed or reached bottom. Position: ${afterScroll}`);
-      // If we can't scroll anymore, still continue for the full duration
-      // Sometimes LinkedIn loads content even when we can't scroll further
-    }
-    
-    // Pause to allow LinkedIn to process and load content
-    backgroundLog(`📜 Pausing ${pauseBetweenScrolls}ms for content loading...`);
-    await wait(pauseBetweenScrolls);
+    backgroundLog(`📜 Scrolled from ${beforeScroll} to ${afterScroll}, doc height: ${documentHeight} → ${newDocumentHeight}`);
     
     // Check for new content after each scroll
     const currentPosts = document.querySelectorAll('.feed-shared-update-v2__control-menu-container');
@@ -991,8 +1072,24 @@ async function scrollFeedToLoadPosts(duration: number): Promise<void> {
       const newPosts = newPostCount - lastPostCount;
       backgroundLog(`📜 ✅ Content loaded! Found ${newPosts} new posts (total: ${newPostCount})`);
       lastPostCount = newPostCount;
+      
+      // Update status panel with success indicator
+      if (statusPanel) {
+        const scrollProgressElement = statusPanel.querySelector('#scroll-progress span');
+        if (scrollProgressElement) {
+          scrollProgressElement.textContent = `✅ Loaded ${newPosts} new posts! (Total: ${newPostCount})`;
+        }
+      }
     } else {
       backgroundLog(`📜 ⚠️ No new posts detected. Still at ${newPostCount} posts`);
+      
+      // Update status panel with no new content indicator
+      if (statusPanel) {
+        const scrollProgressElement = statusPanel.querySelector('#scroll-progress span');
+        if (scrollProgressElement) {
+          scrollProgressElement.textContent = `⏳ Waiting for new content... (${newPostCount} posts)`;
+        }
+      }
     }
     
     // Apply anti-throttling techniques periodically
@@ -1000,6 +1097,36 @@ async function scrollFeedToLoadPosts(duration: number): Promise<void> {
       await forceTabActiveState();
       forceTriggerLinkedInLoading();
       backgroundLog(`📜 🎭 Reapplied anti-throttling techniques`);
+      
+      // Update status panel with anti-throttling indicator
+      if (statusPanel) {
+        const scrollProgressElement = statusPanel.querySelector('#scroll-progress span');
+        if (scrollProgressElement) {
+          scrollProgressElement.textContent = `🎭 Applied anti-throttling techniques`;
+        }
+      }
+    }
+    
+    // If document height didn't change, we might be done
+    if (newDocumentHeight === documentHeight && newPostCount === lastPostCount) {
+      backgroundLog(`📜 📊 No height or post changes detected - continuing for full duration`);
+    }
+  }
+  
+  // Final status update
+  if (statusPanel) {
+    const finalPosts = document.querySelectorAll('.feed-shared-update-v2__control-menu-container');
+    const totalNewPosts = finalPosts.length - postCountBefore;
+    
+    const timeRemainingElement = statusPanel.querySelector('#time-remaining span');
+    const scrollProgressElement = statusPanel.querySelector('#scroll-progress span');
+    
+    if (timeRemainingElement) {
+      timeRemainingElement.textContent = `0s - COMPLETE!`;
+    }
+    
+    if (scrollProgressElement) {
+      scrollProgressElement.textContent = `🎉 Scrolling complete! Loaded ${totalNewPosts} new posts`;
     }
   }
   
@@ -1008,14 +1135,14 @@ async function scrollFeedToLoadPosts(duration: number): Promise<void> {
   const totalNewPosts = finalPosts.length - initialPosts.length;
   const actualDuration = Math.round((Date.now() - startTime) / 1000);
   
-  console.log('Finished scrolling to load posts');
-  backgroundLog(`📜 Scroll completed! Duration: ${actualDuration}s, Scroll attempts: ${scrollAttempts}, Successful scrolls: ${actualScrolls}, New posts loaded: ${totalNewPosts} (${initialPosts.length} → ${finalPosts.length})`);
+  console.log('Finished aggressive scrolling to load posts');
+  backgroundLog(`📜 Aggressive scroll completed! Duration: ${actualDuration}s, Scroll attempts: ${scrollAttempts}, New posts loaded: ${totalNewPosts} (${initialPosts.length} → ${finalPosts.length})`);
   
   // Alert if we didn't load many posts
   if (totalNewPosts < 15 && actualDuration > 15) {
-    backgroundWarn(`📜 ⚠️ Only loaded ${totalNewPosts} posts in ${actualDuration}s. LinkedIn might be throttling background tabs.`);
+    backgroundWarn(`📜 ⚠️ Only loaded ${totalNewPosts} posts in ${actualDuration}s. LinkedIn might be throttling or has limited content.`);
   } else if (totalNewPosts >= 20) {
-    backgroundLog(`📜 🎉 Great success! Loaded ${totalNewPosts} posts using normal scrolling.`);
+    backgroundLog(`📜 🎉 Excellent! Loaded ${totalNewPosts} posts using aggressive scrolling.`);
   }
 }
 
